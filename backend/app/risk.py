@@ -17,8 +17,12 @@ class RiskDecision:
 class RiskEngine:
     def __init__(self, repository: TradeRepository):
         self.repository = repository
-        self.inventory = 0.0
+        self.inventory = self._load_inventory()
         self._cooldown_until: datetime | None = None
+
+    def _load_inventory(self) -> float:
+        trades = self.repository.list_trades(limit=5000)
+        return sum(float(trade["size"]) if trade["side"] == "buy" else -float(trade["size"]) for trade in trades)
 
     def check(self, config: AppConfig, side: str, price: float, size: float) -> RiskDecision:
         now = datetime.now(UTC)

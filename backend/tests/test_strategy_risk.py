@@ -31,3 +31,35 @@ def test_risk_blocks_daily_loss(tmp_path):
     decision = risk.check(AppConfig(), "buy", 100, 0.001)
     assert decision.allowed is False
     assert decision.reason == "max_daily_loss_exceeded"
+
+
+def test_risk_loads_inventory_from_trade_history(tmp_path):
+    repo = TradeRepository(tmp_path / "trades.sqlite")
+    repo.insert_trade(
+        Trade(
+            timestamp=datetime.now(UTC).isoformat(),
+            symbol="BTC/USDT",
+            side="buy",
+            price=100,
+            size=2,
+            pnl=0,
+            fee=0,
+            exchange="binance:paper",
+        )
+    )
+    repo.insert_trade(
+        Trade(
+            timestamp=datetime.now(UTC).isoformat(),
+            symbol="BTC/USDT",
+            side="sell",
+            price=100,
+            size=0.5,
+            pnl=0,
+            fee=0,
+            exchange="binance:paper",
+        )
+    )
+
+    risk = RiskEngine(repo)
+
+    assert risk.inventory == 1.5
