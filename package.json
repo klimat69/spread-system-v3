@@ -1,0 +1,17 @@
+{
+  "name": "spread-system-v3",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Production-grade spread trading system with FastAPI, React, SQLite, WebSockets, and Electron.",
+  "scripts": {
+    "install:frontend": "npm --prefix frontend install",
+    "install:desktop": "npm --prefix desktop install",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:desktop": "npm --prefix desktop run build",
+    "build:win": "npm --prefix desktop run build:win",
+    "build:mac": "npm --prefix desktop run build:mac",
+    "build:linux": "npm --prefix desktop run build:linux",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:desktop": "npm --prefix desktop run dev"
+  }
+}

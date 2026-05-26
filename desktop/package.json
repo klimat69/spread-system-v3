@@ -1,0 +1,19 @@
+{
+  "name": "spread-system-v3-desktop",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Spread System v3 desktop wrapper",
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "electron .",
+    "build": "electron-builder --config ../installer/electron-builder.json",
+    "build:win": "electron-builder --config ../installer/electron-builder.json --win",
+    "build:mac": "electron-builder --config ../installer/electron-builder.json --mac",
+    "build:linux": "electron-builder --config ../installer/electron-builder.json --linux"
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest"
+  }
+}

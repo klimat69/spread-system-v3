@@ -1,0 +1,68 @@
+{
+  "appId": "com.spreadsystem.v3",
+  "productName": "Spread System v3",
+  "directories": {
+    "output": "../installer/dist"
+  },
+  "files": [
+    "**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "../backend",
+      "to": "backend",
+      "filter": [
+        "**/*",
+        "!**/__pycache__/**",
+        "!**/.pytest_cache/**"
+      ]
+    },
+    {
+      "from": "../frontend/dist",
+      "to": "frontend/dist"
+    },
+    {
+      "from": "../data",
+      "to": "data",
+      "filter": [
+        "config.json"
+      ]
+    }
+  ],
+  "artifactName": "${productName}-${os}-${arch}.${ext}",
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "artifactName": "spread-system-v3-setup.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "shortcutName": "Spread System v3",
+    "installerLanguages": [
+      "en_US",
+      "ru_RU"
+    ]
+  },
+  "mac": {
+    "target": [
+      "dmg"
+    ],
+    "artifactName": "spread-system-v3.${ext}",
+    "category": "public.app-category.finance"
+  },
+  "linux": {
+    "target": [
+      "AppImage"
+    ],
+    "artifactName": "spread-system-v3.${ext}",
+    "category": "Finance"
+  }
+}

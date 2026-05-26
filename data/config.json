@@ -1,0 +1,33 @@
+{
+  "exchange": {
+    "name": "binance",
+    "api_key": "",
+    "api_secret": "",
+    "password": "",
+    "sandbox": true
+  },
+  "trading": {
+    "mode": "paper",
+    "symbol": "BTC/USDT",
+    "order_size": 0.001,
+    "cycle_interval_seconds": 1.0,
+    "live_trading_enabled": false
+  },
+  "fees": {
+    "maker": 0.001,
+    "taker": 0.001
+  },
+  "strategy": {
+    "min_edge": 0.001,
+    "volatility_threshold": 0.02,
+    "imbalance_limit": 0.7,
+    "min_liquidity": 1000.0,
+    "volatility_window": 20
+  },
+  "risk": {
+    "max_daily_loss": 100.0,
+    "max_inventory_exposure": 1000.0,
+    "max_position_size": 0.01,
+    "cooldown_after_loss_seconds": 60
+  }
+}

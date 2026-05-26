@@ -1,0 +1,43 @@
+appId: com.spreadsystem.v3
+productName: Spread System v3
+directories:
+  output: ../installer/dist
+files:
+  - main.js
+  - preload.js
+  - package.json
+extraResources:
+  - from: ../backend
+    to: backend
+  - from: ../data
+    to: data
+  - from: ../frontend/dist
+    to: frontend
+  - from: ../requirements.txt
+    to: requirements.txt
+  - from: ../run.py
+    to: run.py
+win:
+  target:
+    - nsis
+  artifactName: spread-system-v3-setup.exe
+mac:
+  target:
+    - dmg
+  artifactName: spread-system-v3.dmg
+linux:
+  target:
+    - AppImage
+  artifactName: spread-system-v3.AppImage
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Spread System v3
+  installerLanguages:
+    - en_US
+    - ru_RU
+dmg:
+  writeUpdateInfo: false
