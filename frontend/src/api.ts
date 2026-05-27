@@ -2,14 +2,12 @@ import type { AppConfig, AppLog, BotStatus, PnlSummary, Trade } from "./types";
 
 declare global {
   interface Window {
-    spreadConfig?: {
-      apiBase: string;
-      wsBase: string;
-    };
+    SPREAD_API_BASE?: string;
+    SPREAD_WS_BASE?: string;
   }
 }
 
-const API_BASE = window.spreadConfig?.apiBase ?? import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
+const API_BASE = window.SPREAD_API_BASE ?? import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -35,7 +33,7 @@ export const api = {
 };
 
 export function liveWsUrl(): string {
-  const base = window.spreadConfig?.wsBase ?? import.meta.env.VITE_WS_BASE;
+  const base = window.SPREAD_WS_BASE ?? import.meta.env.VITE_WS_BASE;
   if (base) return `${base}/ws/live`;
   const protocol = API_BASE.startsWith("https") ? "wss" : "ws";
   const host = API_BASE.replace(/^https?:\/\//, "");
