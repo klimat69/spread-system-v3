@@ -14,5 +14,12 @@ contextBridge.exposeInMainWorld("spreadSystemDesktop", {
       apiSecret: payload.apiSecret,
       password: payload.password ?? ""
     }),
-  clearExchangeCredentials: (exchange) => ipcRenderer.invoke("keychain-clear-credentials", { exchange })
+  clearExchangeCredentials: (exchange) => ipcRenderer.invoke("keychain-clear-credentials", { exchange }),
+  onUpdaterStatus: (handler) => {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on("updater-status", listener);
+    return () => ipcRenderer.removeListener("updater-status", listener);
+  },
+  checkForUpdates: () => ipcRenderer.invoke("updater-check-now"),
+  installUpdateNow: () => ipcRenderer.invoke("updater-install-now")
 });

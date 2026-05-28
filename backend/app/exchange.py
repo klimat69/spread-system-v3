@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 from .config import AppConfig
 from .database import Fill, OrderIntent, encode_raw
 from .credentials import credential_store
+from .mexc_symbols import sort_symbols, symbol_meta
 from .strategy import MarketSnapshot, OrderBookLevel, TapePrint
 
 
@@ -213,6 +214,8 @@ class ExchangeAdapter:
         client = self._build_client(config)
         markets = await asyncio.to_thread(client.load_markets)
         symbols_by_quote: dict[str, list[str]] = {}
+        symbols_meta: dict[str, dict[str, str]] = {}
+        market_by_symbol: dict[str, dict[str, Any]] = {}
         for market in markets.values():
             if not market.get("active", True):
                 continue
@@ -228,11 +231,25 @@ class ExchangeAdapter:
             quote = str(market.get("quote") or "").upper()
             if not symbol or not quote:
                 continue
+            market_by_symbol[symbol] = market
             symbols_by_quote.setdefault(quote, []).append(symbol)
-        for quote in symbols_by_quote:
-            symbols_by_quote[quote] = sorted(set(symbols_by_quote[quote]))
+        for quote, items in symbols_by_quote.items():
+            unique = sorted(set(items))
+            popular, rest = sort_symbols(unique, market_type, quote)
+            symbols_by_quote[quote] = popular + rest
+            for sym in unique:
+                symbols_meta[sym] = symbol_meta(sym, market_type, market_by_symbol.get(sym))
         quotes = sorted(symbols_by_quote.keys(), key=lambda q: (q != "USDT", q))
-        return {"quotes": quotes, "symbols_by_quote": symbols_by_quote}
+        popular_by_quote = {
+            quote: sort_symbols(items, market_type, quote)[0]
+            for quote, items in symbols_by_quote.items()
+        }
+        return {
+            "quotes": quotes,
+            "symbols_by_quote": symbols_by_quote,
+            "symbols_meta": symbols_meta,
+            "popular_by_quote": popular_by_quote,
+        }
 
     async def fetch_symbols(self, config: AppConfig, market_type: str, quote: str | None = None) -> list[str]:
         catalog = await self.fetch_symbol_catalog(config, market_type)

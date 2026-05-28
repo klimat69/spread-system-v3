@@ -30,6 +30,13 @@ export interface AppConfig {
     imbalance_limit: number;
     min_liquidity: number;
     volatility_window: number;
+    max_orderbook_age_seconds?: number;
+    max_open_orders_per_symbol?: number;
+    entry_cooldown_seconds?: number;
+    imbalance_exit_threshold?: number;
+    tape_aggression_entry_threshold?: number;
+    market_data_stale_after_seconds?: number;
+    max_holding_seconds?: number;
   };
   risk: {
     max_daily_loss: number;
@@ -109,6 +116,15 @@ export interface AppLog {
   message: string;
 }
 
+export interface SymbolMeta {
+  display: string;
+  quote: string;
+  kind: string;
+  mexc_url: string;
+  tradingview: string;
+  note: string;
+}
+
 export interface SymbolListResponse {
   exchange: "mexc";
   market_type: MarketType;
@@ -116,6 +132,8 @@ export interface SymbolListResponse {
   quote: string | null;
   symbols_by_quote: Record<string, string[]>;
   symbols: string[];
+  popular_symbols?: string[];
+  symbols_meta?: Record<string, SymbolMeta>;
 }
 
 export interface MarketBookLevel {

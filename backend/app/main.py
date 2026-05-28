@@ -181,6 +181,15 @@ async def get_symbols(
         if selected_quote
         else await exchange_adapter.fetch_symbols(config, market_type)
     )
+    symbols_meta = catalog.get("symbols_meta")
+    popular_by_quote = catalog.get("popular_by_quote")
+    if not isinstance(symbols_meta, dict):
+        symbols_meta = {}
+    quote_popular: list[str] = []
+    if isinstance(popular_by_quote, dict) and selected_quote:
+        raw_popular = popular_by_quote.get(selected_quote, [])
+        if isinstance(raw_popular, list):
+            quote_popular = [s for s in raw_popular if s in symbols]
     return {
         "exchange": "mexc",
         "market_type": market_type,
@@ -188,6 +197,8 @@ async def get_symbols(
         "quote": selected_quote,
         "symbols_by_quote": symbols_by_quote,
         "symbols": symbols,
+        "popular_symbols": quote_popular,
+        "symbols_meta": symbols_meta,
     }
 
 

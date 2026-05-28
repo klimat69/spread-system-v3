@@ -1,6 +1,6 @@
 {
   "name": "spread-system-v3-desktop",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "description": "Spread System v3 desktop wrapper",
   "main": "main.js",
@@ -25,7 +25,7 @@
     "electron-builder": "latest"
   },
   "dependencies": {
-    "electron-updater": "latest",
+    "electron-updater": "^4.0.0",
     "keytar": "latest"
   }
 }

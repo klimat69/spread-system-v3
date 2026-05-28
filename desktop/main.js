@@ -351,33 +351,83 @@ function appendUpdaterLog(message) {
   }
 }
 
+function notifyRendererUpdater(payload) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("updater-status", payload);
+}
+
 function setupAutoUpdater() {
   if (!isPackaged || !autoUpdater) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
 
-  autoUpdater.on("checking-for-update", () => appendUpdaterLog("Checking for updates..."));
-  autoUpdater.on("update-available", (info) => appendUpdaterLog(`Update available: ${info?.version || "unknown"}`));
-  autoUpdater.on("update-not-available", (info) => appendUpdaterLog(`No update available. Current=${app.getVersion()} Latest=${info?.version || "same"}`));
-  autoUpdater.on("error", (error) => appendUpdaterLog(`Updater error: ${error?.message || String(error)}`));
+  autoUpdater.on("checking-for-update", () => {
+    appendUpdaterLog("Checking for updates...");
+    notifyRendererUpdater({ state: "checking", currentVersion: app.getVersion() });
+  });
+  autoUpdater.on("update-available", async (info) => {
+    const version = info?.version || "новая";
+    appendUpdaterLog(`Update available: ${version}`);
+    notifyRendererUpdater({
+      state: "available",
+      currentVersion: app.getVersion(),
+      version,
+      message: `Доступно обновление ${version}. Загрузка…`
+    });
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    await dialog.showMessageBox(mainWindow, {
+      type: "info",
+      buttons: ["OK"],
+      defaultId: 0,
+      title: "Доступно обновление",
+      message: `Вышла версия ${version}.`,
+      detail: "Файл загружается в фоне. Когда загрузка завершится, появится предложение перезапустить приложение."
+    });
+  });
+  autoUpdater.on("update-not-available", (info) => {
+    appendUpdaterLog(`No update available. Current=${app.getVersion()} Latest=${info?.version || "same"}`);
+    notifyRendererUpdater({
+      state: "idle",
+      currentVersion: app.getVersion(),
+      version: info?.version,
+      message: "Установлена последняя версия."
+    });
+  });
+  autoUpdater.on("error", (error) => {
+    const message = error?.message || String(error);
+    appendUpdaterLog(`Updater error: ${message}`);
+    notifyRendererUpdater({ state: "error", message: `Ошибка обновления: ${message}` });
+  });
   autoUpdater.on("download-progress", (progress) => {
-    appendUpdaterLog(`Download progress: ${Math.round(progress?.percent || 0)}%`);
+    const percent = Math.round(progress?.percent || 0);
+    appendUpdaterLog(`Download progress: ${percent}%`);
+    notifyRendererUpdater({
+      state: "downloading",
+      percent,
+      message: `Загрузка обновления: ${percent}%`
+    });
   });
   autoUpdater.on("update-downloaded", async (info) => {
-    appendUpdaterLog(`Update downloaded: ${info?.version || "unknown"}`);
-    if (!mainWindow) {
+    const version = info?.version || "новая";
+    appendUpdaterLog(`Update downloaded: ${version}`);
+    notifyRendererUpdater({
+      state: "ready",
+      version,
+      message: `Обновление ${version} готово к установке.`
+    });
+    if (!mainWindow || mainWindow.isDestroyed()) {
       autoUpdater.quitAndInstall();
       return;
     }
     const result = await dialog.showMessageBox(mainWindow, {
       type: "info",
-      buttons: ["Restart now", "Later"],
+      buttons: ["Перезапустить сейчас", "Позже"],
       defaultId: 0,
       cancelId: 1,
-      title: "Update ready",
-      message: `Version ${info?.version || "new"} is ready to install.`,
-      detail: "The app will restart and apply the update."
+      title: "Обновление готово",
+      message: `Версия ${version} загружена.`,
+      detail: "Перезапустите приложение, чтобы применить обновление."
     });
     if (result.response === 0) autoUpdater.quitAndInstall();
   });
@@ -496,6 +546,26 @@ ipcMain.handle("open-backend-log", async () => {
   if (!backendLogPath) return false;
   await shell.openPath(backendLogPath);
   return true;
+});
+
+ipcMain.handle("updater-check-now", async () => {
+  if (!isPackaged || !autoUpdater) {
+    return { ok: false, message: "Проверка обновлений доступна только в установленной версии." };
+  }
+  try {
+    await autoUpdater.checkForUpdates();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("updater-install-now", async () => {
+  if (!isPackaged || !autoUpdater) {
+    return { ok: false, message: "Установка обновления недоступна в dev-режиме." };
+  }
+  autoUpdater.quitAndInstall();
+  return { ok: true };
 });
 
 app.whenReady().then(createWindow);
