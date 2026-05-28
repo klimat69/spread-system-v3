@@ -170,7 +170,15 @@ export default function App() {
           </span>
           <span className="update-actions">
             {updaterStatus.state === "ready" && window.spreadSystemDesktop && (
-              <button type="button" className="primary" onClick={() => void window.spreadSystemDesktop?.installUpdateNow()}>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  void window.spreadSystemDesktop?.installUpdateNow().then((result) => {
+                    if (result && !result.ok) setError(result.message ?? "Не удалось установить обновление");
+                  });
+                }}
+              >
                 {ru.updateReadyRestart}
               </button>
             )}

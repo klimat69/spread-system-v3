@@ -23,6 +23,10 @@ let backendProcess = null;
 let backendLogPath = null;
 let updaterLogPath = null;
 let updaterInterval = null;
+let lastUpdateVersion = null;
+
+const MAC_APP_BUNDLE_NAME = "Spread System v3.app";
+const MAC_INSTALL_PATH = path.join("/Applications", MAC_APP_BUNDLE_NAME);
 
 const isPackaged = app.isPackaged;
 const projectRoot = isPackaged ? process.resourcesPath : path.resolve(__dirname, "..");
@@ -351,6 +355,73 @@ function appendUpdaterLog(message) {
   }
 }
 
+function getUpdaterPendingDir() {
+  return path.join(userDataDir, "..", "Caches", "spread-system-v3-desktop-updater", "pending");
+}
+
+function getPendingZipPath() {
+  const zipPath = path.join(getUpdaterPendingDir(), "spread-system-v3.zip");
+  return fs.existsSync(zipPath) ? zipPath : null;
+}
+
+function stopBackendForUpdate() {
+  if (!backendProcess) return;
+  try {
+    backendProcess.kill("SIGTERM");
+  } catch (_e) {
+    // Ignore kill errors during shutdown.
+  }
+  backendProcess = null;
+}
+
+function installPendingMacUpdate() {
+  const zipPath = getPendingZipPath();
+  if (!zipPath) {
+    return { ok: false, message: "Файл обновления не найден. Дождитесь загрузки до 100%." };
+  }
+
+  const extractDir = path.join(app.getPath("temp"), `spread-update-${Date.now()}`);
+  const scriptPath = path.join(app.getPath("temp"), `spread-install-${Date.now()}.sh`);
+  const parentPid = process.pid;
+  const script = `#!/bin/bash
+set -e
+sleep 1
+kill ${parentPid} 2>/dev/null || true
+pkill -f "spread-backend" 2>/dev/null || true
+sleep 1
+mkdir -p "${extractDir}"
+/usr/bin/unzip -oq "${zipPath}" -d "${extractDir}"
+test -d "${extractDir}/${MAC_APP_BUNDLE_NAME}"
+rm -rf "${MAC_INSTALL_PATH}"
+/usr/bin/ditto "${extractDir}/${MAC_APP_BUNDLE_NAME}" "${MAC_INSTALL_PATH}"
+xattr -cr "${MAC_INSTALL_PATH}" 2>/dev/null || true
+/usr/bin/open "${MAC_INSTALL_PATH}"
+rm -rf "${extractDir}"
+rm -f "${scriptPath}"
+`;
+
+  fs.writeFileSync(scriptPath, script, { mode: 0o755 });
+  appendUpdaterLog(`Manual macOS install started from ${zipPath}`);
+  stopBackendForUpdate();
+  const child = spawn("/bin/bash", [scriptPath], { detached: true, stdio: "ignore" });
+  child.unref();
+  setTimeout(() => app.quit(), 300);
+  return { ok: true, message: "Установка запущена. Приложение перезапустится через несколько секунд." };
+}
+
+function applyPendingUpdate() {
+  if (!isPackaged || !autoUpdater) {
+    return { ok: false, message: "Установка обновления недоступна в dev-режиме." };
+  }
+  if (process.platform === "darwin" && getPendingZipPath()) {
+    return installPendingMacUpdate();
+  }
+  appendUpdaterLog("Applying update via quitAndInstall");
+  stopBackendForUpdate();
+  autoUpdater.quitAndInstall(false, true);
+  return { ok: true };
+}
+
 function notifyRendererUpdater(payload) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send("updater-status", payload);
@@ -368,6 +439,7 @@ function setupAutoUpdater() {
   });
   autoUpdater.on("update-available", async (info) => {
     const version = info?.version || "новая";
+    lastUpdateVersion = version;
     appendUpdaterLog(`Update available: ${version}`);
     notifyRendererUpdater({
       state: "available",
@@ -397,6 +469,16 @@ function setupAutoUpdater() {
   autoUpdater.on("error", (error) => {
     const message = error?.message || String(error);
     appendUpdaterLog(`Updater error: ${message}`);
+    const signatureIssue = message.includes("code signature");
+    if (process.platform === "darwin" && signatureIssue && getPendingZipPath()) {
+      appendUpdaterLog("Using manual install path (unsigned macOS build)");
+      notifyRendererUpdater({
+        state: "ready",
+        version: lastUpdateVersion || undefined,
+        message: "Обновление загружено. Нажмите «Перезапустить» для установки."
+      });
+      return;
+    }
     notifyRendererUpdater({ state: "error", message: `Ошибка обновления: ${message}` });
   });
   autoUpdater.on("download-progress", (progress) => {
@@ -417,7 +499,7 @@ function setupAutoUpdater() {
       message: `Обновление ${version} готово к установке.`
     });
     if (!mainWindow || mainWindow.isDestroyed()) {
-      autoUpdater.quitAndInstall();
+      applyPendingUpdate();
       return;
     }
     const result = await dialog.showMessageBox(mainWindow, {
@@ -429,7 +511,7 @@ function setupAutoUpdater() {
       message: `Версия ${version} загружена.`,
       detail: "Перезапустите приложение, чтобы применить обновление."
     });
-    if (result.response === 0) autoUpdater.quitAndInstall();
+    if (result.response === 0) applyPendingUpdate();
   });
 
   autoUpdater.checkForUpdates().catch((error) => appendUpdaterLog(`Initial check failed: ${error?.message || String(error)}`));
@@ -560,13 +642,7 @@ ipcMain.handle("updater-check-now", async () => {
   }
 });
 
-ipcMain.handle("updater-install-now", async () => {
-  if (!isPackaged || !autoUpdater) {
-    return { ok: false, message: "Установка обновления недоступна в dev-режиме." };
-  }
-  autoUpdater.quitAndInstall();
-  return { ok: true };
-});
+ipcMain.handle("updater-install-now", async () => applyPendingUpdate());
 
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => {
