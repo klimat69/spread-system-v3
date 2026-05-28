@@ -80,7 +80,14 @@
   },
   "mac": {
     "target": [
-      "dmg"
+      {
+        "target": "dmg",
+        "arch": ["x64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["x64"]
+      }
     ],
     "artifactName": "spread-system-v3.${ext}",
     "category": "public.app-category.finance"
