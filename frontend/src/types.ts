@@ -1,5 +1,6 @@
 export type TradingMode = "paper" | "live";
-export type ExchangeName = "binance" | "bybit" | "mexc";
+export type ExchangeName = "mexc";
+export type MarketType = "spot" | "swap";
 
 export interface AppConfig {
   exchange: {
@@ -11,10 +12,13 @@ export interface AppConfig {
   };
   trading: {
     mode: TradingMode;
+    market_type: MarketType;
     symbol: string;
     order_size: number;
     cycle_interval_seconds: number;
     live_trading_enabled: boolean;
+    auto_trade_enabled: boolean;
+    use_realtime_dom_engine?: boolean;
   };
   fees: {
     maker: number;
@@ -32,6 +36,13 @@ export interface AppConfig {
     max_inventory_exposure: number;
     max_position_size: number;
     cooldown_after_loss_seconds: number;
+  };
+  simple_scalp?: {
+    spread_min: number;
+    imbalance_min: number;
+    aggression_min: number;
+    stale_order_after_seconds: number;
+    replace_move_bps: number;
   };
 }
 
@@ -74,7 +85,7 @@ export interface PnlSummary {
 }
 
 export interface LiveMessage {
-  type: "snapshot" | "live" | "status" | "config" | "error";
+  type: "snapshot" | "live" | "status" | "config" | "error" | "market" | "orders" | "dry_run" | "sync";
   status?: BotStatus;
   pnl?: PnlSummary;
   trades?: Trade[];
@@ -82,10 +93,154 @@ export interface LiveMessage {
   config?: AppConfig;
   message?: string;
   metrics?: Record<string, number>;
+  market?: MarketStateEnvelope;
+  state?: MarketState;
+  orders?: Array<Record<string, unknown>>;
+  dry_run_orders?: DryRunOrder[];
+  event?: DryRunOrder;
+  market_data?: Record<string, unknown>;
+  dom_delta?: DomDelta;
+  tape_trade?: TapeTrade;
 }
 
 export interface AppLog {
   timestamp: string;
   level: string;
   message: string;
+}
+
+export interface SymbolListResponse {
+  exchange: "mexc";
+  market_type: MarketType;
+  quotes: string[];
+  quote: string | null;
+  symbols_by_quote: Record<string, string[]>;
+  symbols: string[];
+}
+
+export interface MarketBookLevel {
+  price: number;
+  size: number;
+}
+
+export interface MarketTradePrint {
+  price: number;
+  size: number;
+  side: "buy" | "sell";
+  timestamp: string;
+}
+
+export interface MarketState {
+  exchange: string;
+  market_type: MarketType;
+  symbol: string;
+  best_bid: number;
+  best_ask: number;
+  spread: number;
+  imbalance: number;
+  bids: MarketBookLevel[];
+  asks: MarketBookLevel[];
+  recent_trades: MarketTradePrint[];
+  ws_status: string;
+  ws_reason: string;
+  feed_state?: "OK" | "DELAYED" | "DESYNC" | "RECOVERING";
+  last_update: string | null;
+  sequence: number | null;
+  clock_skew_ms?: number;
+  tape_velocity_1s?: number;
+  buy_aggression_rate?: number;
+  sell_aggression_rate?: number;
+  delta_velocity?: number;
+  dom_queue_depth?: number;
+  tape_queue_depth?: number;
+  resync_count?: number;
+  desync_count?: number;
+  reconnect_count?: number;
+  ui_drop_rate?: number;
+  book_apply_latency_ms?: number;
+  candles_1m?: CandleBar[];
+}
+
+export interface MarketStateEnvelope {
+  health: Record<string, unknown>;
+  exchange: string;
+  market_type: MarketType;
+  symbol: string;
+  best_bid: number;
+  best_ask: number;
+  spread: number;
+  imbalance: number;
+  bids: MarketBookLevel[];
+  asks: MarketBookLevel[];
+  recent_trades: MarketTradePrint[];
+  ws_status: string;
+  ws_reason: string;
+  feed_state?: "OK" | "DELAYED" | "DESYNC" | "RECOVERING";
+  last_update: string | null;
+  sequence: number | null;
+  clock_skew_ms?: number;
+  tape_velocity_1s?: number;
+  buy_aggression_rate?: number;
+  sell_aggression_rate?: number;
+  delta_velocity?: number;
+  dom_queue_depth?: number;
+  tape_queue_depth?: number;
+  resync_count?: number;
+  desync_count?: number;
+  reconnect_count?: number;
+  ui_drop_rate?: number;
+  book_apply_latency_ms?: number;
+  candles_1m?: CandleBar[];
+}
+
+export interface CandleBar {
+  ts: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface DomDelta {
+  type: "dom_delta";
+  symbol: string;
+  market_type: MarketType;
+  sequence?: number;
+  ts_exchange?: number;
+  ts_local: number;
+  spread?: number;
+  best_bid?: number;
+  best_ask?: number;
+  updated_bids: Array<[number, number]>;
+  updated_asks: Array<[number, number]>;
+  removed_bids?: number[];
+  removed_asks?: number[];
+  book_health: string;
+}
+
+export interface TapeTrade {
+  type: "tape_trade";
+  symbol: string;
+  market_type: MarketType;
+  trade_id?: string;
+  side: "buy" | "sell";
+  aggressor?: "buyer" | "seller";
+  price: number;
+  size: number;
+  notional?: number;
+  ts_exchange?: number;
+  ts_local: number;
+}
+
+export interface DryRunOrder {
+  id: string;
+  timestamp: string;
+  side: "buy" | "sell";
+  price: number;
+  size: number;
+  reason: string;
+  status: string;
+  closed_at?: string;
+  exit_reason?: string;
 }

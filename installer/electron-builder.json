@@ -18,6 +18,20 @@
       ]
     },
     {
+      "from": "../desktop/backend-runtime",
+      "to": "backend-runtime",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "../desktop/windows-python-embed",
+      "to": "windows-python-embed",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
       "from": "../frontend/dist",
       "to": "frontend/dist"
     },
@@ -25,11 +39,23 @@
       "from": "../data",
       "to": "data",
       "filter": [
-        "config.json"
+        "config.example.json"
       ]
+    },
+    {
+      "from": "../requirements.txt",
+      "to": "requirements.txt"
     }
   ],
   "artifactName": "${productName}-${os}-${arch}.${ext}",
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "${env.GH_OWNER}",
+      "repo": "${env.GH_REPO}",
+      "releaseType": "release"
+    }
+  ],
   "win": {
     "target": [
       {
@@ -45,6 +71,7 @@
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
     "shortcutName": "Spread System v3",
     "installerLanguages": [
       "en_US",

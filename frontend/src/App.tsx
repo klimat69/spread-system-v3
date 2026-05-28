@@ -1,118 +1,96 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis
-} from "recharts";
+import { useEffect, useState } from "react";
+import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { api } from "./api";
+import { useLiveTerminal } from "./useLiveTerminal";
+import type { AppConfig, MarketType } from "./types";
 
-import { api, liveWsUrl } from "./api";
-import type { AppConfig, AppLog, BotStatus, LiveMessage, PnlSummary, Trade } from "./types";
-
-const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const percent = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 3 });
 
-function emptyStatus(): BotStatus {
+function quoteFromSymbol(symbol: string): string {
+  const pair = symbol.split(":")[0];
+  return (pair.split("/")[1] ?? "USDT").toUpperCase();
+}
+
+function normalizeMexcConfig(config: AppConfig): AppConfig {
   return {
-    running: false,
-    mode: "paper",
-    exchange: "binance",
-    symbol: "BTC/USDT",
-    last_error: null,
-    last_update: null,
-    spread: 0,
-    edge: 0,
-    volatility: 0,
-    imbalance: 0,
-    blocked_reason: null
+    ...config,
+    exchange: { ...config.exchange, name: "mexc", sandbox: false },
+    trading: {
+      ...config.trading,
+      market_type: config.trading.market_type ?? "swap",
+      auto_trade_enabled: config.trading.auto_trade_enabled ?? false
+    }
   };
 }
 
-function App() {
-  const [status, setStatus] = useState<BotStatus>(emptyStatus());
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [pnl, setPnl] = useState<PnlSummary>({
-    total_pnl: 0,
-    daily_pnl: 0,
-    net_pnl: 0,
-    gross_pnl: 0,
-    fees: 0,
-    winrate: 0,
-    profit_factor: 0,
-    trade_count: 0,
-    equity_curve: []
-  });
+function mexcFuturesUrl(symbol: string): string {
+  const market = symbol.split(":")[0].replace("/", "_").toUpperCase();
+  return `https://www.mexc.com/ru-RU/futures/${market}`;
+}
+
+function tradingViewSymbol(symbol: string, marketType: MarketType): string {
+  const normalized = symbol.split(":")[0].replace("/", "").toUpperCase();
+  return marketType === "swap" ? `MEXC:${normalized}.P` : `MEXC:${normalized}`;
+}
+
+function tradingViewEmbedUrl(symbol: string, marketType: MarketType): string {
+  const tvSymbol = encodeURIComponent(tradingViewSymbol(symbol, marketType));
+  return `https://s.tradingview.com/widgetembed/?frameElementId=tv_mexc_realtime&symbol=${tvSymbol}&interval=1&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=f1f3f6&theme=dark&style=1&timezone=Etc%2FUTC&withdateranges=0&studies=[]&hideideas=1`;
+}
+
+export default function App() {
+  const { status, market, dryRunOrders, wsConnected, wsHealth, error, symbolCatalog, setSymbolCatalog, setError } = useLiveTerminal();
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [logs, setLogs] = useState<AppLog[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState({ symbol: "", start: "", end: "" });
   const [saving, setSaving] = useState(false);
+  const [quoteCurrency, setQuoteCurrency] = useState("USDT");
+  const [symbolSearch, setSymbolSearch] = useState("");
+  const [midSeries, setMidSeries] = useState<Array<{ t: string; mid: number }>>([]);
+
+  const quotes = symbolCatalog?.quotes ?? [];
+  const symbols = symbolCatalog?.symbols_by_quote?.[quoteCurrency] ?? symbolCatalog?.symbols ?? [];
+  const filteredSymbols = symbols.filter((symbol) => symbol.toLowerCase().includes(symbolSearch.trim().toLowerCase()));
 
   useEffect(() => {
-    loadInitial();
-    const ws = new WebSocket(liveWsUrl());
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data) as LiveMessage;
-      if (message.status) setStatus(message.status);
-      if (message.pnl) setPnl(normalizePnl(message.pnl));
-      if (message.config) setConfig(message.config);
-      if (message.trades) setTrades(message.trades);
-      if (message.trade) setTrades((current) => [message.trade as Trade, ...current].slice(0, 500));
-      if (message.message) setError(message.message);
-    };
-    ws.onerror = () => setError("WebSocket connection failed");
-    return () => ws.close();
+    void (async () => {
+      try {
+        const cfg = normalizeMexcConfig(await api.config());
+        setConfig(cfg);
+        const quote = quoteFromSymbol(cfg.trading.symbol);
+        const catalog = await api.symbols(cfg.trading.market_type, quote);
+        setSymbolCatalog(catalog);
+        setQuoteCurrency(catalog.quote ?? quote);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    })();
   }, []);
 
-  const spreadSeries = useMemo(
-    () => [
-      { name: "Spread", value: status.spread },
-      { name: "Edge", value: status.edge },
-      { name: "Volatility", value: status.volatility },
-      { name: "Imbalance", value: status.imbalance }
-    ],
-    [status]
-  );
+  useEffect(() => {
+    if (!market || market.best_bid <= 0 || market.best_ask <= 0) return;
+    const mid = (market.best_bid + market.best_ask) / 2;
+    const t = new Date().toLocaleTimeString();
+    setMidSeries((prev) => [...prev.slice(-299), { t, mid }]);
+  }, [market?.best_bid, market?.best_ask]);
 
-  async function loadInitial() {
-    try {
-      const [nextStatus, nextTrades, nextPnl, nextConfig, nextLogs] = await Promise.all([
-        api.status(),
-        api.trades(),
-        api.pnl(),
-        api.config(),
-        api.logs()
-      ]);
-      setStatus(nextStatus);
-      setTrades(nextTrades);
-      setPnl(normalizePnl(nextPnl));
-      setConfig(nextConfig);
-      setLogs(nextLogs);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }
+  const futuresSeries =
+    market?.candles_1m?.map((candle) => ({
+      t: new Date(candle.ts).toLocaleTimeString(),
+      px: candle.close
+    })) ?? [];
 
-  async function applyFilters() {
-    const params = new URLSearchParams();
-    if (filters.symbol) params.set("symbol", filters.symbol);
-    if (filters.start) params.set("start", filters.start);
-    if (filters.end) params.set("end", filters.end);
-    const result = await api.trades(params.toString() ? `?${params.toString()}` : "");
-    setTrades(result);
+  async function loadSymbols(marketType: MarketType, quote?: string) {
+    const catalog = await api.symbols(marketType, quote);
+    setSymbolCatalog(catalog);
+    if (catalog.quote) setQuoteCurrency(catalog.quote);
+    return catalog;
   }
 
   async function saveConfig() {
     if (!config) return;
     setSaving(true);
     try {
-      const saved = await api.saveConfig(config);
-      setConfig(saved);
+      const saved = await api.saveConfig(normalizeMexcConfig(config));
+      setConfig(normalizeMexcConfig(saved));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -121,290 +99,223 @@ function App() {
     }
   }
 
-  async function startStop(running: boolean) {
+  async function toggleStart() {
     try {
-      setStatus(running ? await api.stop() : await api.start());
+      await (status.running ? api.stop() : api.start());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
-  if (!config) {
-    return <main className="loading">Loading Spread System v3...</main>;
-  }
+  if (!config) return <main className="loading">Loading MEXC terminal...</main>;
 
   return (
-    <main className="app-shell">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">Spread System v3</p>
-          <h1>Trading Terminal</h1>
-          <p className="muted">
-            {status.exchange.toUpperCase()} · {status.symbol} · {status.mode.toUpperCase()} mode
-          </p>
+    <main className="terminal-shell">
+      <header className="terminal-top">
+        <div className="top-left">
+          <strong>Spread System v3 · MEXC Terminal</strong>
+          <span className={wsConnected ? "ok" : "bad"}>{wsConnected ? "WS Connected" : "WS Disconnected"}</span>
+          <span className={wsHealth === "OK" ? "ok" : "bad"}>Feed: {wsHealth}</span>
         </div>
-        <div className="hero-actions">
-          <span className={status.running ? "badge running" : "badge stopped"}>
-            {status.running ? "RUNNING" : "STOPPED"}
-          </span>
-          <button onClick={() => startStop(status.running)}>
-            {status.running ? "Stop Bot" : "Start Bot"}
+        <div className="top-right">
+          <label className="switch">
+            Auto Trade
+            <input
+              type="checkbox"
+              checked={config.trading.auto_trade_enabled}
+              onChange={(event) =>
+                setConfig({ ...config, trading: { ...config.trading, auto_trade_enabled: event.target.checked } })
+              }
+            />
+          </label>
+          <button className="primary" onClick={toggleStart}>
+            {status.running ? "Stop" : "Start"}
           </button>
         </div>
       </header>
+      {error && <div className="alert">{error}</div>}
 
-      {error && <section className="alert">{error}</section>}
-
-      <section className="grid metrics-grid">
-        <Metric title="Live PnL" value={currency.format(pnl.total_pnl)} large />
-        <Metric title="Daily PnL" value={currency.format(pnl.daily_pnl)} />
-        <Metric title="Winrate" value={percent.format(pnl.winrate)} />
-        <Metric title="Profit Factor" value={pnl.profit_factor.toFixed(2)} />
-        <Metric title="Spread" value={percent.format(status.spread)} />
-        <Metric title="Volatility" value={percent.format(status.volatility)} />
-      </section>
-
-      <section className="grid two-column">
-        <Panel title="Equity Curve">
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={pnl.equity_curve}>
-              <defs>
-                <linearGradient id="equity" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="5%" stopColor="#3ddc97" stopOpacity={0.45} />
-                  <stop offset="95%" stopColor="#3ddc97" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#233044" />
-              <XAxis dataKey="timestamp" hide />
-              <YAxis stroke="#8091a7" />
-              <Tooltip />
-              <Area dataKey="equity" stroke="#3ddc97" fill="url(#equity)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </Panel>
-
-        <Panel title="Live Spread View">
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={spreadSeries}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#233044" />
-              <XAxis dataKey="name" stroke="#8091a7" />
-              <YAxis stroke="#8091a7" />
-              <Tooltip formatter={(value) => percent.format(Number(value))} />
-              <Line type="monotone" dataKey="value" stroke="#77a6ff" strokeWidth={3} />
-            </LineChart>
-          </ResponsiveContainer>
-          <p className="muted">
-            Risk/strategy block: {status.blocked_reason ?? "none"} · Last update:{" "}
-            {status.last_update ?? "waiting"}
-          </p>
-        </Panel>
-      </section>
-
-      <section className="grid two-column align-start">
-        <Panel title="Config Panel">
-          <ConfigForm config={config} setConfig={setConfig} />
-          <div className="button-row">
-            <button onClick={saveConfig} disabled={saving}>
-              SAVE CONFIG
-            </button>
-            <button onClick={saveConfig} disabled={saving}>
-              APPLY CONFIG
-            </button>
+      <section className="terminal-grid">
+        <aside className="left-panel panel">
+          <h3>Markets</h3>
+          <label>
+            Market
+            <select
+              value={config.trading.market_type}
+              onChange={async (event) => {
+                const marketType = event.target.value as MarketType;
+                const catalog = await loadSymbols(marketType);
+                setConfig({ ...config, trading: { ...config.trading, market_type: marketType, symbol: catalog.symbols[0] ?? config.trading.symbol } });
+              }}
+            >
+              <option value="spot">Spot</option>
+              <option value="swap">Futures (perpetual)</option>
+            </select>
+          </label>
+          {config.trading.market_type === "spot" && quotes.length > 0 && (
+            <div className="quote-tabs">
+              {quotes.map((quote) => (
+                <button
+                  key={quote}
+                  className={quote === quoteCurrency ? "active" : ""}
+                  onClick={async () => {
+                    const catalog = await loadSymbols("spot", quote);
+                    setConfig({ ...config, trading: { ...config.trading, symbol: catalog.symbols[0] ?? config.trading.symbol } });
+                  }}
+                >
+                  {quote}
+                </button>
+              ))}
+            </div>
+          )}
+          <input placeholder="Search pair" value={symbolSearch} onChange={(e) => setSymbolSearch(e.target.value)} />
+          <div className="pair-list">
+            {(filteredSymbols.length > 0 ? filteredSymbols : [config.trading.symbol]).slice(0, 200).map((symbol) => (
+              <button
+                key={symbol}
+                className={symbol === config.trading.symbol ? "active" : ""}
+                onClick={() => setConfig({ ...config, trading: { ...config.trading, symbol } })}
+              >
+                {symbol}
+              </button>
+            ))}
           </div>
-        </Panel>
+        </aside>
 
-        <Panel title="Logs Viewer">
-          <div className="logs">
-            {logs.map((log) => (
-              <div className="log-line" key={`${log.timestamp}-${log.message}`}>
-                <span>{log.timestamp}</span>
-                <strong>{log.level}</strong>
-                <p>{log.message}</p>
+        <section className="center-panel panel">
+          <h3>Realtime Metrics</h3>
+          <div className="mid-chart">
+            <ResponsiveContainer width="100%" height={180}>
+              <LineChart data={config.trading.market_type === "swap" ? futuresSeries : midSeries}>
+                <XAxis dataKey="t" hide />
+                <YAxis domain={["auto", "auto"]} width={60} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(value) => Number(value).toFixed(4)} />
+                <Line
+                  type="monotone"
+                  dataKey={config.trading.market_type === "swap" ? "px" : "mid"}
+                  stroke="#60a5fa"
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="broadcast-header">
+            <strong>Live Broadcast</strong>
+            <a href={mexcFuturesUrl(config.trading.symbol)} target="_blank" rel="noreferrer">
+              Open on MEXC
+            </a>
+          </div>
+          <div className="broadcast-frame-wrap">
+            <iframe
+              key={`${config.trading.market_type}-${config.trading.symbol}`}
+              title="MEXC Live Broadcast"
+              src={tradingViewEmbedUrl(config.trading.symbol, config.trading.market_type)}
+              className="broadcast-frame"
+              loading="lazy"
+            />
+          </div>
+          <div className="metrics">
+            <div><span>Best Bid</span><strong>{market ? market.best_bid.toFixed(4) : "0.0000"}</strong></div>
+            <div><span>Best Ask</span><strong>{market ? market.best_ask.toFixed(4) : "0.0000"}</strong></div>
+            <div><span>Spread</span><strong>{percent.format(market?.spread ?? 0)}</strong></div>
+            <div><span>Imbalance</span><strong>{percent.format(market?.imbalance ?? 0)}</strong></div>
+          </div>
+          <div className="status-row">
+            <span>Mode: {config.trading.mode.toUpperCase()}</span>
+            <span>Auto: {config.trading.auto_trade_enabled ? "ON" : "OFF"}</span>
+            <span>Blocked: {status.blocked_reason ?? "none"}</span>
+          </div>
+          <div className="settings">
+            <label>
+              API Key
+              <input value={config.exchange.api_key} onChange={(e) => setConfig({ ...config, exchange: { ...config.exchange, api_key: e.target.value } })} />
+            </label>
+            <label>
+              API Secret
+              <input type="password" value={config.exchange.api_secret} onChange={(e) => setConfig({ ...config, exchange: { ...config.exchange, api_secret: e.target.value } })} />
+            </label>
+            <label>
+              API Password
+              <input type="password" value={config.exchange.password} onChange={(e) => setConfig({ ...config, exchange: { ...config.exchange, password: e.target.value } })} />
+            </label>
+            <label>
+              Mode
+              <select value={config.trading.mode} onChange={(e) => setConfig({ ...config, trading: { ...config.trading, mode: e.target.value as "paper" | "live" } })}>
+                <option value="paper">Paper</option>
+                <option value="live">Live</option>
+              </select>
+            </label>
+            <label className="switch">
+              Enable live orders
+              <input
+                type="checkbox"
+                checked={config.trading.live_trading_enabled}
+                onChange={(e) => setConfig({ ...config, trading: { ...config.trading, live_trading_enabled: e.target.checked } })}
+              />
+            </label>
+            <label>
+              Order size
+              <input
+                type="number"
+                step="any"
+                value={config.trading.order_size}
+                onChange={(e) => setConfig({ ...config, trading: { ...config.trading, order_size: Number(e.target.value) || config.trading.order_size } })}
+              />
+            </label>
+            <button className="primary" onClick={saveConfig} disabled={saving}>{saving ? "Saving..." : "Save Config"}</button>
+          </div>
+          <div className="dry-run">
+            <h4>Paper Dry-Run Events</h4>
+            {dryRunOrders.length === 0 && <p>No dry-run events yet.</p>}
+            {dryRunOrders.slice(-12).reverse().map((order) => (
+              <div key={order.id} className="dry-item">
+                <span>{order.timestamp}</span>
+                <strong>{order.side.toUpperCase()} {order.size}</strong>
+                <span>@ {order.price.toFixed(4)} · {order.status}</span>
               </div>
             ))}
           </div>
-        </Panel>
-      </section>
+        </section>
 
-      <Panel title="Trade History">
-        <div className="filters">
-          <input
-            placeholder="Symbol, e.g. BTC/USDT"
-            value={filters.symbol}
-            onChange={(event) => setFilters({ ...filters, symbol: event.target.value })}
-          />
-          <input
-            type="date"
-            value={filters.start}
-            onChange={(event) => setFilters({ ...filters, start: event.target.value })}
-          />
-          <input
-            type="date"
-            value={filters.end}
-            onChange={(event) => setFilters({ ...filters, end: event.target.value })}
-          />
-          <button onClick={applyFilters}>Apply Filters</button>
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Symbol</th>
-                <th>Side</th>
-                <th>Price</th>
-                <th>Size</th>
-                <th>PnL</th>
-                <th>Fee</th>
-                <th>Exchange</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trades.map((trade) => (
-                <tr key={trade.id}>
-                  <td>{new Date(trade.timestamp).toLocaleString()}</td>
-                  <td>{trade.symbol}</td>
-                  <td className={trade.side}>{trade.side}</td>
-                  <td>{trade.price.toFixed(4)}</td>
-                  <td>{trade.size}</td>
-                  <td className={trade.pnl >= 0 ? "positive" : "negative"}>{trade.pnl.toFixed(4)}</td>
-                  <td>{trade.fee.toFixed(4)}</td>
-                  <td>{trade.exchange}</td>
-                </tr>
+        <aside className="right-panel panel">
+          <h3>Order Book</h3>
+          <div className="book">
+            <div className="book-side">
+              <h4>Asks</h4>
+              {(market?.asks ?? []).slice(0, 10).map((level) => (
+                <div key={`a-${level.price}-${level.size}`} className="level sell">
+                  <span>{level.price.toFixed(4)}</span>
+                  <span>{level.size.toFixed(4)}</span>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
+            </div>
+            <div className="book-side">
+              <h4>Bids</h4>
+              {(market?.bids ?? []).slice(0, 10).map((level) => (
+                <div key={`b-${level.price}-${level.size}`} className="level buy">
+                  <span>{level.price.toFixed(4)}</span>
+                  <span>{level.size.toFixed(4)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <h3>Live Trades</h3>
+          <div className="tape">
+            {(market?.recent_trades ?? []).slice(-60).reverse().map((trade) => (
+              <div key={`${trade.timestamp}-${trade.price}-${trade.size}`} className={`tape-item ${trade.side}`}>
+                <span>{new Date(trade.timestamp).toLocaleTimeString()}</span>
+                <strong>{trade.price.toFixed(4)}</strong>
+                <span>{trade.size.toFixed(4)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mini-pnl">
+            Spread: {percent.format(market?.spread ?? 0)} · Imbalance: {percent.format(market?.imbalance ?? 0)}
+          </div>
+        </aside>
+      </section>
     </main>
   );
 }
-
-function normalizePnl(summary: PnlSummary): PnlSummary {
-  const total = summary.total_pnl ?? summary.net_pnl ?? 0;
-  return {
-    ...summary,
-    total_pnl: total,
-    daily_pnl: summary.daily_pnl ?? total,
-    net_pnl: summary.net_pnl ?? total,
-    gross_pnl: summary.gross_pnl ?? total,
-    fees: summary.fees ?? 0
-  };
-}
-
-function Metric({ title, value, large = false }: { title: string; value: string; large?: boolean }) {
-  return (
-    <section className={large ? "metric large" : "metric"}>
-      <span>{title}</span>
-      <strong>{value}</strong>
-    </section>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="panel">
-      <h2>{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function ConfigForm({
-  config,
-  setConfig
-}: {
-  config: AppConfig;
-  setConfig: (config: AppConfig) => void;
-}) {
-  return (
-    <div className="config-grid">
-      <label>
-        Exchange
-        <select
-          value={config.exchange.name}
-          onChange={(event) =>
-            setConfig({ ...config, exchange: { ...config.exchange, name: event.target.value as AppConfig["exchange"]["name"] } })
-          }
-        >
-          <option value="binance">Binance</option>
-          <option value="bybit">Bybit</option>
-          <option value="mexc">MEXC</option>
-        </select>
-      </label>
-      <label>
-        API Key
-        <input
-          value={config.exchange.api_key}
-          onChange={(event) => setConfig({ ...config, exchange: { ...config.exchange, api_key: event.target.value } })}
-        />
-      </label>
-      <label>
-        API Secret
-        <input
-          type="password"
-          value={config.exchange.api_secret}
-          onChange={(event) => setConfig({ ...config, exchange: { ...config.exchange, api_secret: event.target.value } })}
-        />
-      </label>
-      <label>
-        API Password
-        <input
-          type="password"
-          value={config.exchange.password}
-          onChange={(event) => setConfig({ ...config, exchange: { ...config.exchange, password: event.target.value } })}
-        />
-      </label>
-      <label>
-        Trading Mode
-        <select
-          value={config.trading.mode}
-          onChange={(event) =>
-            setConfig({ ...config, trading: { ...config.trading, mode: event.target.value as AppConfig["trading"]["mode"] } })
-          }
-        >
-          <option value="paper">Paper</option>
-          <option value="live">Live</option>
-        </select>
-      </label>
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={config.trading.live_trading_enabled}
-          onChange={(event) => setConfig({ ...config, trading: { ...config.trading, live_trading_enabled: event.target.checked } })}
-        />
-        Enable live trading
-      </label>
-      <label>
-        Symbol
-        <input
-          value={config.trading.symbol}
-          onChange={(event) => setConfig({ ...config, trading: { ...config.trading, symbol: event.target.value } })}
-        />
-      </label>
-      <NumberField label="Maker Fee" value={config.fees.maker} onChange={(value) => setConfig({ ...config, fees: { ...config.fees, maker: value } })} />
-      <NumberField label="Taker Fee" value={config.fees.taker} onChange={(value) => setConfig({ ...config, fees: { ...config.fees, taker: value } })} />
-      <NumberField label="Min Edge" value={config.strategy.min_edge} onChange={(value) => setConfig({ ...config, strategy: { ...config.strategy, min_edge: value } })} />
-      <NumberField label="Volatility Threshold" value={config.strategy.volatility_threshold} onChange={(value) => setConfig({ ...config, strategy: { ...config.strategy, volatility_threshold: value } })} />
-      <NumberField label="Max Imbalance" value={config.strategy.imbalance_limit} onChange={(value) => setConfig({ ...config, strategy: { ...config.strategy, imbalance_limit: value } })} />
-      <NumberField label="Min Liquidity" value={config.strategy.min_liquidity} onChange={(value) => setConfig({ ...config, strategy: { ...config.strategy, min_liquidity: value } })} />
-      <NumberField label="Order Size" value={config.trading.order_size} onChange={(value) => setConfig({ ...config, trading: { ...config.trading, order_size: value } })} />
-      <NumberField label="Max Daily Loss" value={config.risk.max_daily_loss} onChange={(value) => setConfig({ ...config, risk: { ...config.risk, max_daily_loss: value } })} />
-      <NumberField label="Max Inventory Exposure" value={config.risk.max_inventory_exposure} onChange={(value) => setConfig({ ...config, risk: { ...config.risk, max_inventory_exposure: value } })} />
-      <NumberField label="Max Position Size" value={config.risk.max_position_size} onChange={(value) => setConfig({ ...config, risk: { ...config.risk, max_position_size: value } })} />
-      <NumberField label="Cooldown After Loss (s)" value={config.risk.cooldown_after_loss_seconds} onChange={(value) => setConfig({ ...config, risk: { ...config.risk, cooldown_after_loss_seconds: Math.round(value) } })} />
-      <NumberField label="Cycle Interval (s)" value={config.trading.cycle_interval_seconds} onChange={(value) => setConfig({ ...config, trading: { ...config.trading, cycle_interval_seconds: value } })} />
-    </div>
-  );
-}
-
-function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
-  return (
-    <label>
-      {label}
-      <input type="number" step="any" value={value} onChange={(event) => onChange(Number(event.target.value))} />
-    </label>
-  );
-}
-
-export default App;

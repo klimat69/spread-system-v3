@@ -7,13 +7,25 @@
   "type": "commonjs",
   "scripts": {
     "dev": "electron .",
-    "build": "electron-builder --config ../installer/electron-builder.json",
-    "build:win": "electron-builder --config ../installer/electron-builder.json --win",
-    "build:mac": "electron-builder --config ../installer/electron-builder.json --mac",
-    "build:linux": "electron-builder --config ../installer/electron-builder.json --linux"
+    "build:backend-runtime": "node ./scripts/build-backend-runtime.js",
+    "verify:backend-runtime": "node ./scripts/verify-backend-runtime.js",
+    "verify:target:mac": "node ./scripts/verify-host-target.js mac",
+    "verify:target:win": "node ./scripts/verify-host-target.js win",
+    "verify:target:linux": "node ./scripts/verify-host-target.js linux",
+    "build": "npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json",
+    "build:win": "npm run verify:target:win && npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json --win",
+    "build:win:publish": "npm run verify:target:win && npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json --win --publish always",
+    "build:win:installer": "node ./scripts/build-win-installer.js",
+    "build:mac": "npm run verify:target:mac && npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json --mac",
+    "build:mac:publish": "npm run verify:target:mac && npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json --mac --publish always",
+    "build:linux": "npm run verify:target:linux && npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json --linux"
   },
   "devDependencies": {
     "electron": "latest",
     "electron-builder": "latest"
+  },
+  "dependencies": {
+    "electron-updater": "latest",
+    "keytar": "latest"
   }
 }

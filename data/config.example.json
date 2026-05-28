@@ -1,0 +1,66 @@
+{
+  "exchange": {
+    "name": "mexc",
+    "api_key": "",
+    "api_secret": "",
+    "password": "",
+    "sandbox": false
+  },
+  "trading": {
+    "mode": "paper",
+    "market_type": "swap",
+    "symbol": "BTC/USDT",
+    "order_size": 0.001,
+    "order_type": "market",
+    "cycle_interval_seconds": 1.0,
+    "sync_interval_seconds": 2.0,
+    "live_trading_enabled": false,
+    "auto_trade_enabled": false,
+    "use_realtime_dom_engine": true,
+    "require_validation": true
+  },
+  "fees": {
+    "maker": 0.001,
+    "taker": 0.001
+  },
+  "strategy": {
+    "min_edge": 0.001,
+    "volatility_threshold": 0.02,
+    "imbalance_limit": 0.35,
+    "min_liquidity": 1000.0,
+    "volatility_window": 20,
+    "max_orderbook_age_seconds": 3.0,
+    "slippage_buffer": 0.0005,
+    "max_open_orders_per_symbol": 1,
+    "entry_cooldown_seconds": 5,
+    "orderbook_depth_levels": 10,
+    "wall_multiplier": 3.0,
+    "wall_proximity_bps": 15.0,
+    "min_wall_notional": 500.0,
+    "tape_window_seconds": 3.0,
+    "tape_aggression_entry_threshold": 0.25,
+    "imbalance_exit_threshold": 0.12,
+    "tape_aggression_exit_threshold": 0.1,
+    "min_tape_notional": 250.0,
+    "momentum_burst_multiplier": 1.5,
+    "max_holding_seconds": 8.0,
+    "websocket_silence_seconds": 5.0,
+    "market_data_stale_after_seconds": 2.0,
+    "tape_silence_seconds": 30.0,
+    "max_event_delay_ms": 1500.0,
+    "trade_book_validation_tolerance_bps": 10.0
+  },
+  "risk": {
+    "max_daily_loss": 100.0,
+    "max_inventory_exposure": 1000.0,
+    "max_position_size": 0.01,
+    "cooldown_after_loss_seconds": 60
+  },
+  "simple_scalp": {
+    "spread_min": 0.0002,
+    "imbalance_min": 0.2,
+    "aggression_min": 0.15,
+    "stale_order_after_seconds": 1.5,
+    "replace_move_bps": 3.0
+  }
+}

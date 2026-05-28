@@ -15,10 +15,13 @@ release/
 *.db
 data/*.db
 data/*.sqlite
+data/config.json
 data/logs/
 logs/
 frontend/dist/
 desktop/dist/
 desktop/release/
+desktop/backend-runtime/
+desktop/pyinstaller-work/
 installer/dist/
-!data/config.json
+!data/config.example.json

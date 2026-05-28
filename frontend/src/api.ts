@@ -1,4 +1,4 @@
-import type { AppConfig, AppLog, BotStatus, PnlSummary, Trade } from "./types";
+import type { AppConfig, AppLog, BotStatus, MarketStateEnvelope, PnlSummary, SymbolListResponse, Trade } from "./types";
 
 declare global {
   interface Window {
@@ -15,7 +15,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options
   });
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}: ${await response.text()}`);
+    const raw = await response.text();
+    let detail = raw;
+    try {
+      const parsed = JSON.parse(raw) as { detail?: unknown; message?: unknown };
+      if (typeof parsed.detail === "string") detail = parsed.detail;
+      else if (typeof parsed.message === "string") detail = parsed.message;
+      else if (parsed.detail) detail = JSON.stringify(parsed.detail);
+    } catch {
+      // keep raw text for non-json errors
+    }
+    throw new Error(`${response.status} ${response.statusText}: ${detail}`);
   }
   return response.json() as Promise<T>;
 }
@@ -27,6 +37,12 @@ export const api = {
   config: () => request<AppConfig>("/config"),
   saveConfig: (config: AppConfig) =>
     request<AppConfig>("/config", { method: "POST", body: JSON.stringify(config) }),
+  symbols: (marketType: "spot" | "swap", quote?: string) => {
+    const params = new URLSearchParams({ market_type: marketType });
+    if (quote) params.set("quote", quote);
+    return request<SymbolListResponse>(`/symbols?${params.toString()}`);
+  },
+  marketState: () => request<MarketStateEnvelope>("/market/state"),
   start: () => request<BotStatus>("/start", { method: "POST" }),
   stop: () => request<BotStatus>("/stop", { method: "POST" }),
   logs: () => request<AppLog[]>("/logs")

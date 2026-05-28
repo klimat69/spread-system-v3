@@ -9,8 +9,16 @@
     "build:frontend": "npm --prefix frontend run build",
     "build:desktop": "npm --prefix desktop run build",
     "build:win": "npm --prefix desktop run build:win",
+    "build:win:publish": "npm --prefix desktop run build:win:publish",
     "build:mac": "npm --prefix desktop run build:mac",
+    "build:mac:publish": "npm --prefix desktop run build:mac:publish",
     "build:linux": "npm --prefix desktop run build:linux",
+    "release:win": "npm run build:frontend && npm run build:win",
+    "release:win:publish": "npm run build:frontend && npm run build:win:publish",
+    "release:win:cross": "npm --prefix desktop run build:win:installer",
+    "release:mac": "npm run build:frontend && npm run build:mac",
+    "release:mac:publish": "npm run build:frontend && npm run build:mac:publish",
+    "release:linux": "npm run build:frontend && npm run build:linux",
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:desktop": "npm --prefix desktop run dev"
   }

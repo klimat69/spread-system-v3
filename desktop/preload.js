@@ -5,5 +5,14 @@ contextBridge.exposeInMainWorld("spreadConfig", {
   wsBase: "ws://127.0.0.1:8000"
 });
 contextBridge.exposeInMainWorld("spreadSystemDesktop", {
-  openBackendLog: () => ipcRenderer.invoke("open-backend-log")
+  openBackendLog: () => ipcRenderer.invoke("open-backend-log"),
+  getExchangeCredentials: (exchange) => ipcRenderer.invoke("keychain-get-credentials", { exchange }),
+  setExchangeCredentials: (exchange, payload) =>
+    ipcRenderer.invoke("keychain-set-credentials", {
+      exchange,
+      apiKey: payload.apiKey,
+      apiSecret: payload.apiSecret,
+      password: payload.password ?? ""
+    }),
+  clearExchangeCredentials: (exchange) => ipcRenderer.invoke("keychain-clear-credentials", { exchange })
 });

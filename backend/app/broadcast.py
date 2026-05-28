@@ -26,11 +26,14 @@ class ConnectionManager:
         async with self._lock:
             connections = list(self.active_connections)
         for websocket in connections:
-            try:
-                await websocket.send_json(payload)
-            except Exception:
-                logger.exception("Dropping failed websocket connection")
-                await self.disconnect(websocket)
+            asyncio.create_task(self._send_or_drop(websocket, payload))
+
+    async def _send_or_drop(self, websocket: WebSocket, payload: dict) -> None:
+        try:
+            await asyncio.wait_for(websocket.send_json(payload), timeout=0.25)
+        except Exception:
+            logger.exception("Dropping failed websocket connection")
+            await self.disconnect(websocket)
 
 
 connection_manager = ConnectionManager()
