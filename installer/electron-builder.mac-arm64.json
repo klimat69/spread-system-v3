@@ -1,0 +1,9 @@
+{
+  "extends": "./electron-builder.json",
+  "mac": {
+    "target": [
+      { "target": "zip", "arch": ["arm64"] },
+      { "target": "dmg", "arch": ["arm64"] }
+    ]
+  }
+}

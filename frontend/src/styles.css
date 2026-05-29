@@ -171,12 +171,79 @@ select:focus {
   font-size: 0.72rem;
 }
 
-.demo-preset-btn {
+.paper-analytics {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #22314f;
+}
+
+.paper-analytics h3 {
+  margin-top: 0;
+}
+
+.paper-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  font-size: 0.86rem;
+  color: #94a3b8;
+}
+
+.paper-stats strong {
+  color: #e2e8f0;
+}
+
+.paper-table-wrap {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid #22314f;
+  border-radius: 10px;
+}
+
+.paper-table {
   width: 100%;
-  margin-top: 8px;
-  border-color: rgba(96, 165, 250, 0.45);
-  background: rgba(30, 58, 138, 0.35);
-  color: #bfdbfe;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.paper-table th,
+.paper-table td {
+  padding: 5px 6px;
+  text-align: left;
+  border-bottom: 1px solid #1e2a44;
+}
+
+.paper-table th {
+  color: #94a3b8;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  background: #0a1425;
+}
+
+.paper-table .side-buy {
+  color: #86efac;
+}
+
+.paper-table .side-sell {
+  color: #fca5a5;
+}
+
+.pnl-pos {
+  color: #4ade80;
+  font-weight: 700;
+}
+
+.pnl-neg {
+  color: #f87171;
+  font-weight: 700;
+}
+
+.chart-legend-hint {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  color: #64748b;
 }
 
 .chart-interval-tabs {
@@ -420,6 +487,28 @@ select:focus {
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+.stream-chart,
+.stream-chart-empty {
+  height: 100%;
+  padding: 8px 10px;
+  box-sizing: border-box;
+}
+
+.stream-chart-title {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  color: #93c5fd;
+}
+
+.stream-chart-empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  color: #94a3b8;
 }
 
 .metrics span {

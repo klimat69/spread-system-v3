@@ -216,8 +216,12 @@ class TradingEngine:
             await manager.broadcast({"type": "dry_run", "event": event, "orders": self._dry_run_orders[-30:]})
         elif decision.should_exit and self._dry_run_orders:
             latest = self._dry_run_orders[-1]
+            if latest.get("status") != "OPEN":
+                return
+            exit_price = state.best_ask if latest["side"] == "buy" else state.best_bid
             latest["status"] = "CLOSED"
             latest["closed_at"] = datetime.now(UTC).isoformat()
+            latest["exit_price"] = exit_price
             latest["exit_reason"] = decision.reason
             await manager.broadcast({"type": "dry_run", "event": latest, "orders": self._dry_run_orders[-30:]})
 

@@ -1,6 +1,5 @@
 {
   "appId": "com.spreadsystem.v3",
-  "name": "spread-system-v3",
   "productName": "Spread System v3",
   "directories": {
     "output": "../installer/dist"

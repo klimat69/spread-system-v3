@@ -98,6 +98,23 @@ function resolvePackagedBackendBinary() {
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
 
+function backendBinaryArchMismatch(binaryPath) {
+  if (process.platform !== "darwin" || !binaryPath) return null;
+  try {
+    const probe = spawnSync("file", [binaryPath], { encoding: "utf8" });
+    const output = `${probe.stdout || ""}${probe.stderr || ""}`;
+    if (process.arch === "x64" && output.includes("arm64")) {
+      return "В приложении backend для Apple Silicon (arm64), а нужен Intel (x64). Переустановите .dmg для Intel Mac.";
+    }
+    if (process.arch === "arm64" && output.includes("x86_64")) {
+      return "В приложении backend для Intel (x64), а нужен Apple Silicon (arm64). Переустановите .dmg для M1/M2/M3.";
+    }
+  } catch (_e) {
+    return null;
+  }
+  return null;
+}
+
 function pythonCommand() {
   return process.env.SPREAD_PYTHON || (process.platform === "win32" ? "python" : "python3");
 }
@@ -260,6 +277,13 @@ function startBackend() {
   const canRunBinary = Boolean(binaryPath && fs.existsSync(binaryPath));
 
   if (canRunBinary) {
+    const archError = backendBinaryArchMismatch(binaryPath);
+    if (archError) {
+      logStream.write(`\nbackend arch mismatch: ${archError}\n`);
+      dialog.showErrorBox("Несовместимая установка", archError);
+      logStream.end();
+      return false;
+    }
     backendProcess = spawn(binaryPath, [], {
       env: {
         ...process.env,
@@ -271,6 +295,13 @@ function startBackend() {
     });
     backendProcess.on("error", (error) => {
       logStream.write(`\nbackend spawn error: ${error?.message || "unknown"}\n`);
+      const code = error?.code || "";
+      if (code === "Unknown system error -86" || `${code}`.includes("86")) {
+        dialog.showErrorBox(
+          "Несовместимая установка",
+          "Backend не запускается на этом Mac (неверная архитектура). Удалите Spread System v3 из Программ и установите заново правильный .dmg: Intel или Apple Silicon."
+        );
+      }
     });
   } else if (isPackaged && process.platform === "win32") {
     const embedPy = resolveWindowsEmbedPython();

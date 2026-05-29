@@ -263,5 +263,6 @@ export interface DryRunOrder {
   reason: string;
   status: string;
   closed_at?: string;
+  exit_price?: number;
   exit_reason?: string;
 }

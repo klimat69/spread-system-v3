@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "./api";
+import { BotMidChart } from "./BotMidChart";
+import { LiveStreamChart } from "./LiveStreamChart";
+import { PaperAnalyticsPanel } from "./PaperAnalyticsPanel";
+import { buildChartMarkers } from "./paperAnalytics";
+import type { MidTick } from "./streamCandles";
 import {
   type ChartInterval,
   displaySymbol,
@@ -18,40 +23,6 @@ import { useLiveTerminal } from "./useLiveTerminal";
 import type { AppConfig, MarketType } from "./types";
 
 const percent = new Intl.NumberFormat("ru-RU", { style: "percent", maximumFractionDigits: 3 });
-
-function buildDemoGoldConfig(config: AppConfig, goldSymbol: string): AppConfig {
-  return {
-    ...config,
-    trading: {
-      ...config.trading,
-      mode: "paper",
-      market_type: "swap",
-      symbol: goldSymbol,
-      auto_trade_enabled: true,
-      demo_relaxed_signals: true,
-      live_trading_enabled: false
-    },
-    strategy: {
-      ...config.strategy,
-      imbalance_limit: 0.18,
-      tape_aggression_entry_threshold: 0.1,
-      momentum_burst_multiplier: 1.15,
-      min_liquidity: 100,
-      min_tape_notional: 40,
-      max_holding_seconds: 5,
-      market_data_stale_after_seconds: 3,
-      max_orderbook_age_seconds: 2,
-      tape_window_seconds: 2,
-      entry_cooldown_seconds: 2
-    },
-    simple_scalp: {
-      ...config.simple_scalp!,
-      spread_min: 0.0001,
-      imbalance_min: 0.12,
-      aggression_min: 0.08
-    }
-  };
-}
 
 function normalizeMexcConfig(config: AppConfig): AppConfig {
   return {
@@ -91,7 +62,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [quoteCurrency, setQuoteCurrency] = useState("USDT");
   const [symbolSearch, setSymbolSearch] = useState("");
-  const [midSeries, setMidSeries] = useState<Array<{ t: string; mid: number }>>([]);
+  const [midSeries, setMidSeries] = useState<MidTick[]>([]);
   const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatusPayload | null>(null);
   const [chartInterval, setChartInterval] = useState<ChartInterval>("1S");
 
@@ -115,6 +86,7 @@ export default function App() {
   const showGoldFuturesSection = config?.trading.market_type === "swap";
 
   const pairNote = config ? symbolNote(config.trading.symbol, symbolCatalog) : "";
+  const tradeMarkers = useMemo(() => buildChartMarkers(dryRunOrders), [dryRunOrders]);
 
   useEffect(() => {
     const desktop = window.spreadSystemDesktop;
@@ -154,9 +126,14 @@ export default function App() {
   useEffect(() => {
     if (!market || market.best_bid <= 0 || market.best_ask <= 0) return;
     const mid = (market.best_bid + market.best_ask) / 2;
-    const t = new Date().toLocaleTimeString("ru-RU");
-    setMidSeries((prev) => [...prev.slice(-299), { t, mid }]);
+    const ts = Date.now();
+    const t = new Date(ts).toLocaleTimeString("ru-RU");
+    setMidSeries((prev) => [...prev.slice(-599), { t, ts, mid }]);
   }, [market?.best_bid, market?.best_ask]);
+
+  useEffect(() => {
+    setMidSeries([]);
+  }, [config?.trading.symbol, config?.trading.market_type]);
 
   const futuresSeries =
     market?.candles_1m?.map((candle) => ({
@@ -209,12 +186,6 @@ export default function App() {
     if (!config) return;
     setQuoteCurrency("USDT");
     pickSymbol(goldFuturesSymbol, "swap");
-  }
-
-  function applyDemoGoldPreset() {
-    if (!config) return;
-    setConfig(buildDemoGoldConfig(config, goldFuturesSymbol));
-    setQuoteCurrency("USDT");
   }
 
   if (!config) {
@@ -348,10 +319,6 @@ export default function App() {
                 <span>GOLD(XAUT)USDT</span>
                 <small>{goldFuturesSymbol}</small>
               </button>
-              <button type="button" className="demo-preset-btn" onClick={applyDemoGoldPreset}>
-                {ru.demoGoldPreset}
-              </button>
-              <p className="hint">{ru.demoGoldPresetHint}</p>
             </div>
           )}
           {config.trading.market_type === "swap" && quoteCurrency === "USDC" && (
@@ -392,22 +359,27 @@ export default function App() {
 
         <section className="center-panel panel">
           <h3>{ru.realtimeMetrics}</h3>
+          {config.trading.mode === "paper" && <p className="hint">{ru.botMetricsHint}</p>}
           <div className="mid-chart">
-            <ResponsiveContainer width="100%" height={180}>
-              <LineChart data={config.trading.market_type === "swap" ? futuresSeries : midSeries}>
-                <XAxis dataKey="t" hide />
-                <YAxis domain={["auto", "auto"]} width={60} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(value) => Number(value).toFixed(4)} />
-                <Line
-                  type="monotone"
-                  dataKey={config.trading.market_type === "swap" ? "px" : "mid"}
-                  stroke="#60a5fa"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {config.trading.mode === "paper" ? (
+              <BotMidChart data={midSeries} markers={tradeMarkers} />
+            ) : (
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={config.trading.market_type === "swap" ? futuresSeries : midSeries}>
+                  <XAxis dataKey="t" hide />
+                  <YAxis domain={["auto", "auto"]} width={60} tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(value) => Number(value).toFixed(4)} />
+                  <Line
+                    type="monotone"
+                    dataKey={config.trading.market_type === "swap" ? "px" : "mid"}
+                    stroke="#60a5fa"
+                    strokeWidth={2}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
           <div className="broadcast-header">
             <strong>{ru.liveBroadcast}</strong>
@@ -437,13 +409,21 @@ export default function App() {
           <p className="hint">{ru.chartHint}</p>
           {pairNote && <p className="hint warn">{pairNote}</p>}
           <div className="broadcast-frame-wrap">
-            <iframe
-              key={`${config.trading.market_type}-${config.trading.symbol}-${chartInterval}`}
-              title={ru.liveBroadcast}
-              src={tradingViewEmbedUrl(config.trading.symbol, config.trading.market_type, symbolCatalog, chartInterval)}
-              className="broadcast-frame"
-              loading="lazy"
-            />
+            {chartInterval === "1" ? (
+              <iframe
+                key={`${config.trading.market_type}-${config.trading.symbol}-tv`}
+                title={ru.liveBroadcast}
+                src={tradingViewEmbedUrl(config.trading.symbol, config.trading.market_type, symbolCatalog, "1")}
+                className="broadcast-frame"
+                loading="lazy"
+              />
+            ) : (
+              <LiveStreamChart
+                ticks={midSeries}
+                bucketSec={chartInterval === "5S" ? 5 : 1}
+                markers={config.trading.mode === "paper" ? tradeMarkers : []}
+              />
+            )}
           </div>
           <div className="metrics">
             <div>
@@ -876,24 +856,10 @@ export default function App() {
             {saving ? ru.saving : ru.saveConfig}
           </button>
 
-          <div className="dry-run">
-            <h4>{ru.dryRun}</h4>
-            {dryRunOrders.length === 0 && <p>{ru.noDryRun}</p>}
-            {dryRunOrders.slice(-12).reverse().map((order) => (
-              <div key={order.id} className="dry-item">
-                <span>{order.timestamp}</span>
-                <strong>
-                  {order.side.toUpperCase()} {order.size}
-                </strong>
-                <span>
-                  @ {order.price.toFixed(4)} · {order.status}
-                </span>
-              </div>
-            ))}
-          </div>
         </section>
 
         <aside className="right-panel panel">
+          <PaperAnalyticsPanel orders={dryRunOrders} mode={config.trading.mode} />
           <h3>{ru.orderBook}</h3>
           <div className="book">
             <div className="book-side">

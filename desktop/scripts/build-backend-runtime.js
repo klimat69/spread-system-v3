@@ -10,6 +10,16 @@ function run(cmd, args, cwd) {
   return result.status === 0;
 }
 
+function runPython(python, subArgs, cwd) {
+  const pyArgs = python === "py" ? ["-3", ...subArgs] : subArgs;
+  const targetArch = process.env.SPREAD_BACKEND_ARCH;
+  if (process.platform === "darwin" && (targetArch === "x64" || targetArch === "arm64")) {
+    const prefix = targetArch === "x64" ? "-x86_64" : "-arm64";
+    return run("arch", [prefix, python, ...pyArgs], cwd);
+  }
+  return run(python, pyArgs, cwd);
+}
+
 function resolvePython() {
   const preferred = process.env.SPREAD_PYTHON;
   if (preferred) return preferred;
@@ -33,15 +43,15 @@ function main() {
     process.exit(1);
   }
 
-  const pyArgs = (subArgs) => (python === "py" ? ["-3", ...subArgs] : subArgs);
-
-  if (!run(python, pyArgs(["-m", "pip", "install", "-r", "../requirements.txt"]), desktopRoot)) process.exit(1);
-  if (!run(python, pyArgs(["-m", "pip", "install", "pyinstaller"]), desktopRoot)) process.exit(1);
-  if (!run(python, pyArgs(["-c", "import shutil; shutil.rmtree('backend-runtime', ignore_errors=True)"]), desktopRoot)) process.exit(1);
+  if (!runPython(python, ["-m", "pip", "install", "-r", "../requirements.txt"], desktopRoot)) process.exit(1);
+  if (!runPython(python, ["-m", "pip", "install", "pyinstaller"], desktopRoot)) process.exit(1);
+  if (!runPython(python, ["-c", "import shutil; shutil.rmtree('backend-runtime', ignore_errors=True)"], desktopRoot)) {
+    process.exit(1);
+  }
   if (
-    !run(
+    !runPython(
       python,
-      pyArgs([
+      [
         "-m",
         "PyInstaller",
         "../backend/app/server_entrypoint.py",
@@ -63,7 +73,7 @@ function main() {
         "--specpath",
         "./pyinstaller-spec",
         "--clean"
-      ]),
+      ],
       desktopRoot
     )
   ) {

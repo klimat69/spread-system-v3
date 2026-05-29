@@ -10,12 +10,19 @@ const path = require("path");
 const desktopDir = path.resolve(__dirname, "..");
 const distDir = path.resolve(desktopDir, "../installer/dist");
 const platform = (process.argv[2] || "").toLowerCase();
-const configs = [
-  "--config",
-  "../installer/electron-builder.json",
-  "--config",
-  "../installer/electron-builder.github.json"
-];
+const githubConfig = ["--config", "../installer/electron-builder.github.json"];
+
+function macConfigs(arch) {
+  return [
+    "--config",
+    "../installer/electron-builder.json",
+    "--config",
+    `../installer/electron-builder.mac-${arch}.json`,
+    ...githubConfig
+  ];
+}
+
+const winConfigs = ["--config", "../installer/electron-builder.json", ...githubConfig];
 
 function run(command, args, label) {
   const result = spawnSync(command, args, { cwd: desktopDir, stdio: "inherit", shell: false });
@@ -48,12 +55,16 @@ if (platform !== "mac" && platform !== "win") {
   process.exit(1);
 }
 
-run("npm", ["run", "build:backend-runtime"], "backend runtime");
-run("npm", ["run", "verify:backend-runtime"], "backend runtime verify");
 run("npm", ["run", `verify:target:${platform}`], "host target");
 
 if (platform === "mac") {
   for (const arch of ["x64", "arm64"]) {
+    run(
+      "env",
+      [`SPREAD_BACKEND_ARCH=${arch}`, "npm", "run", "build:backend-runtime"],
+      `backend runtime ${arch}`
+    );
+    run("npm", ["run", "verify:backend-runtime"], `verify backend runtime ${arch}`);
     run(
       "npx",
       ["electron-builder", ...configs, "--mac", `--${arch}`, "--publish", "never"],
@@ -61,9 +72,11 @@ if (platform === "mac") {
     );
   }
 } else {
+  run("npm", ["run", "build:backend-runtime"], "backend runtime");
+  run("npm", ["run", "verify:backend-runtime"], "backend runtime verify");
   run(
     "npx",
-    ["electron-builder", ...configs, "--win", "--publish", "never"],
+    ["electron-builder@25.1.8", ...winConfigs, "--win", "--publish", "never"],
     "electron-builder win build"
   );
 }
@@ -79,7 +92,7 @@ if (!publishFiles.length) {
   process.exit(1);
 }
 
-const publishArgs = ["electron-builder", "publish", ...configs];
+const publishArgs = ["electron-builder@25.1.8", "publish", "--config", "../installer/electron-builder.json", ...githubConfig];
 for (const file of publishFiles) {
   publishArgs.push("-f", file);
 }
