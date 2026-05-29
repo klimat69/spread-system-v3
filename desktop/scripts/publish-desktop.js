@@ -22,6 +22,18 @@ function run(command, args, label) {
   }
 }
 
+function cleanMacDist() {
+  if (!fs.existsSync(distDir)) return;
+  for (const name of fs.readdirSync(distDir)) {
+    if (
+      name === "latest-mac.yml" ||
+      /^spread-system-v3-(x64|arm64)\.(zip|dmg|blockmap)$/.test(name)
+    ) {
+      fs.unlinkSync(path.join(distDir, name));
+    }
+  }
+}
+
 function collectPublishFiles(targetPlatform) {
   if (!fs.existsSync(distDir)) {
     return [];
@@ -48,6 +60,7 @@ if (platform !== "mac" && platform !== "win") {
 run("npm", ["run", `verify:target:${platform}`], "host target");
 
 if (platform === "mac") {
+  cleanMacDist();
   for (const arch of ["x64", "arm64"]) {
     run(
       "env",
@@ -70,6 +83,7 @@ if (platform === "mac") {
       `electron-builder mac ${arch}`
     );
   }
+  run("node", ["./scripts/generate-latest-mac-yml.js"], "latest-mac.yml");
 } else {
   run("npm", ["run", "build:backend-runtime"], "backend runtime");
   run("npm", ["run", "verify:backend-runtime"], "backend runtime verify");
