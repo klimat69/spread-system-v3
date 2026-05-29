@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "./api";
 import { BotMidChart } from "./BotMidChart";
-import { LiveStreamChart } from "./LiveStreamChart";
 import { PaperAnalyticsPanel } from "./PaperAnalyticsPanel";
 import { buildChartMarkers } from "./paperAnalytics";
 import type { MidTick } from "./streamCandles";
@@ -78,12 +77,6 @@ export default function App() {
     return popular.filter((s) => s.toLowerCase().includes(q) || displaySymbol(s, symbolCatalog).toLowerCase().includes(q));
   }, [symbolCatalog, symbolSearch]);
   const restSymbols = orderedSymbols.filter((s) => !popularSymbols.includes(s)).slice(0, 200);
-
-  const goldFuturesSymbol = useMemo(
-    () => (symbolCatalog ? resolveGoldFuturesSymbol(symbolCatalog) : "XAUT/USDT:USDT"),
-    [symbolCatalog]
-  );
-  const showGoldFuturesSection = config?.trading.market_type === "swap";
 
   const pairNote = config ? symbolNote(config.trading.symbol, symbolCatalog) : "";
   const tradeMarkers = useMemo(() => buildChartMarkers(dryRunOrders), [dryRunOrders]);
@@ -180,12 +173,6 @@ export default function App() {
     if (quoteFromSymbol(symbol) !== quoteCurrency) {
       setQuoteCurrency(quoteFromSymbol(symbol));
     }
-  }
-
-  function pickGoldFutures() {
-    if (!config) return;
-    setQuoteCurrency("USDT");
-    pickSymbol(goldFuturesSymbol, "swap");
   }
 
   if (!config) {
@@ -307,23 +294,6 @@ export default function App() {
               ))}
             </div>
           )}
-          {showGoldFuturesSection && (
-            <div className="gold-futures-block">
-              <h4 className="subhead gold-head">{ru.goldFutures}</h4>
-              <p className="hint">{ru.goldFuturesHint}</p>
-              <button
-                type="button"
-                className={`gold-futures-btn ${config.trading.symbol === goldFuturesSymbol ? "active" : ""}`}
-                onClick={pickGoldFutures}
-              >
-                <span>GOLD(XAUT)USDT</span>
-                <small>{goldFuturesSymbol}</small>
-              </button>
-            </div>
-          )}
-          {config.trading.market_type === "swap" && quoteCurrency === "USDC" && (
-            <p className="hint warn">{ru.goldFuturesUsdcHint}</p>
-          )}
           <input placeholder={ru.searchPair} value={symbolSearch} onChange={(e) => setSymbolSearch(e.target.value)} />
           {popularSymbols.length > 0 && (
             <>
@@ -409,21 +379,13 @@ export default function App() {
           <p className="hint">{ru.chartHint}</p>
           {pairNote && <p className="hint warn">{pairNote}</p>}
           <div className="broadcast-frame-wrap">
-            {chartInterval === "1" ? (
-              <iframe
-                key={`${config.trading.market_type}-${config.trading.symbol}-tv`}
-                title={ru.liveBroadcast}
-                src={tradingViewEmbedUrl(config.trading.symbol, config.trading.market_type, symbolCatalog, "1")}
-                className="broadcast-frame"
-                loading="lazy"
-              />
-            ) : (
-              <LiveStreamChart
-                ticks={midSeries}
-                bucketSec={chartInterval === "5S" ? 5 : 1}
-                markers={config.trading.mode === "paper" ? tradeMarkers : []}
-              />
-            )}
+            <iframe
+              key={`${config.trading.market_type}-${config.trading.symbol}-${chartInterval}`}
+              title={ru.liveBroadcast}
+              src={tradingViewEmbedUrl(config.trading.symbol, config.trading.market_type, symbolCatalog, chartInterval)}
+              className="broadcast-frame"
+              loading="lazy"
+            />
           </div>
           <div className="metrics">
             <div>

@@ -94,10 +94,7 @@ export const ru = {
   chart5s: "5 сек",
   chart1m: "1 мин",
   chartHint:
-    "1 сек / 5 сек — график по потоку MEXC (как у бота). 1 мин — TradingView (обзор, своя задержка). Секунды в TradingView для MEXC не работают.",
-  chartStream1s: "1 сек — поток MEXC (bid/ask mid)",
-  chartStream5s: "5 сек — поток MEXC (bid/ask mid)",
-  chartStreamWarming: "Копим тики стакана… Подождите «Поток: OK».",
+    "График TradingView — только обзор: у него своя задержка, это не поток бота. Торговля идёт по стакану и ленте справа.",
   feedLatency: "Задержка потока MEXC → экран",
   whySilent: "Почему бот молчит",
   whySilentHint: "Проверьте по порядку:",

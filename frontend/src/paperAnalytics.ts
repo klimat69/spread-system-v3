@@ -14,6 +14,7 @@ export interface PaperTradeRow {
 }
 
 export interface ChartTradeMarker {
+  ts: number;
   t: string;
   price: number;
   kind: "entry" | "exit";
@@ -60,17 +61,22 @@ export function buildPaperTradeRows(orders: DryRunOrder[]): PaperTradeRow[] {
 export function buildChartMarkers(orders: DryRunOrder[]): ChartTradeMarker[] {
   const markers: ChartTradeMarker[] = [];
   for (const order of orders) {
+    const entryTs = Date.parse(order.timestamp);
+    if (!Number.isFinite(entryTs)) continue;
     markers.push({
+      ts: entryTs,
       t: formatChartTime(order.timestamp),
       price: order.price,
       kind: "entry",
       side: order.side
     });
     if (order.status === "CLOSED" && order.exit_price != null) {
-      const exitTs = order.closed_at ?? order.timestamp;
+      const exitTs = Date.parse(order.closed_at ?? order.timestamp);
+      if (!Number.isFinite(exitTs)) continue;
       const exitSide: "buy" | "sell" = order.side === "buy" ? "sell" : "buy";
       markers.push({
-        t: formatChartTime(exitTs),
+        ts: exitTs,
+        t: formatChartTime(order.closed_at ?? order.timestamp),
         price: order.exit_price,
         kind: "exit",
         side: exitSide
