@@ -11,18 +11,8 @@ const desktopDir = path.resolve(__dirname, "..");
 const distDir = path.resolve(desktopDir, "../installer/dist");
 const platform = (process.argv[2] || "").toLowerCase();
 const githubConfig = ["--config", "../installer/electron-builder.github.json"];
-
-function macConfigs(arch) {
-  return [
-    "--config",
-    "../installer/electron-builder.json",
-    "--config",
-    `../installer/electron-builder.mac-${arch}.json`,
-    ...githubConfig
-  ];
-}
-
-const winConfigs = ["--config", "../installer/electron-builder.json", ...githubConfig];
+const baseConfig = ["--config", "../installer/electron-builder.config.cjs"];
+const winConfigs = [...baseConfig, ...githubConfig];
 
 function run(command, args, label) {
   const result = spawnSync(command, args, { cwd: desktopDir, stdio: "inherit", shell: false });
@@ -66,8 +56,17 @@ if (platform === "mac") {
     );
     run("npm", ["run", "verify:backend-runtime"], `verify backend runtime ${arch}`);
     run(
-      "npx",
-      ["electron-builder", ...configs, "--mac", `--${arch}`, "--publish", "never"],
+      "env",
+      [
+        `SPREAD_MAC_ARCH=${arch}`,
+        "npx",
+        "electron-builder@25.1.8",
+        ...baseConfig,
+        ...githubConfig,
+        "--mac",
+        "--publish",
+        "never"
+      ],
       `electron-builder mac ${arch}`
     );
   }
@@ -92,7 +91,7 @@ if (!publishFiles.length) {
   process.exit(1);
 }
 
-const publishArgs = ["electron-builder@25.1.8", "publish", "--config", "../installer/electron-builder.json", ...githubConfig];
+const publishArgs = ["electron-builder@25.1.8", "publish", ...baseConfig, ...githubConfig];
 for (const file of publishFiles) {
   publishArgs.push("-f", file);
 }
