@@ -129,6 +129,23 @@ def test_mexc_futures_subscriptions_use_contract_symbol():
     assert subs[0]["param"]["symbol"] == "BTC_USDT"
 
 
+def test_mexc_futures_gold_subscribes_xaut_usdt():
+    config = AppConfig.model_validate(
+        {
+            **AppConfig().model_dump(),
+            "trading": {
+                **AppConfig().trading.model_dump(),
+                "market_type": "swap",
+                "symbol": "GOLD(XAUT)/USDT:USDT",
+            },
+        }
+    )
+    parser = NativeFeedParser(config)
+    subs = parser.subscriptions()
+    assert subs[0]["param"]["symbol"] == "XAUT_USDT"
+    assert subs[1]["param"]["symbol"] == "XAUT_USDT"
+
+
 @pytest.mark.anyio
 async def test_snapshot_replacement_sets_sequence_after_missing_rest_nonce():
     config = AppConfig()
@@ -174,13 +191,63 @@ async def test_market_data_health_blocks_until_tape_ready():
 
     health = await engine.health(config)
 
+    assert health["status"] == "RECOVERING"
+    assert health["reason"] == "tape_warming_up"
+
+
+@pytest.mark.anyio
+async def test_market_data_health_unhealthy_when_tape_missing_and_book_stale():
+    config = AppConfig()
+    engine = MarketDataEngine()
+    book = LocalOrderBook(depth=5)
+    book.load_snapshot([[100.0, 2.0]], [[100.1, 2.0]], sequence=1)
+    async with engine._lock:
+        engine._book = book
+        engine._status = "OK"
+        engine._reason = "websocket synchronized"
+        engine._last_ws_monotonic_ns = monotonic_ns() - 20_000_000_000
+        engine._last_book_monotonic_ns = monotonic_ns() - 20_000_000_000
+        engine._last_book_event_at = datetime.now(UTC).isoformat()
+
+    health = await engine.health(config)
+
     assert health["status"] == "UNHEALTHY"
     assert health["reason"] == "tape_not_ready"
 
 
 @pytest.mark.anyio
+async def test_swap_health_sequence_warming_when_book_live():
+    config = AppConfig.model_validate(
+        {
+            **AppConfig().model_dump(),
+            "trading": {**AppConfig().trading.model_dump(), "market_type": "swap", "symbol": "XAUT/USDT:USDT"},
+        }
+    )
+    engine = MarketDataEngine()
+    book = LocalOrderBook(depth=5)
+    book.load_snapshot([[4480.0, 2.0]], [[4480.5, 2.0]], sequence=None)
+    async with engine._lock:
+        engine._book = book
+        engine._status = "OK"
+        engine._reason = "websocket synchronized"
+        engine._last_ws_monotonic_ns = monotonic_ns()
+        engine._last_book_monotonic_ns = monotonic_ns()
+        engine._last_book_event_at = datetime.now(UTC).isoformat()
+
+    health = await engine.health(config)
+
+    assert health["status"] == "RECOVERING"
+    assert health["reason"] == "sequence_warming_up"
+
+
+@pytest.mark.anyio
 async def test_market_data_health_blocks_without_sequence():
-    config = AppConfig()
+    config = AppConfig.model_validate(
+        {
+            **AppConfig().model_dump(),
+            "trading": {**AppConfig().trading.model_dump(), "market_type": "spot"},
+        }
+    )
     engine = MarketDataEngine()
     book = LocalOrderBook(depth=5)
     book.load_snapshot([[100.0, 2.0]], [[100.1, 2.0]], sequence=None)

@@ -25,6 +25,7 @@ export function useLiveTerminal() {
   const [symbolCatalog, setSymbolCatalog] = useState<SymbolListResponse | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [wsHealth, setWsHealth] = useState("CONNECTING");
+  const [wsReason, setWsReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [domDelta, setDomDelta] = useState<DomDelta | null>(null);
   const [lastTapeTrade, setLastTapeTrade] = useState<TapeTrade | null>(null);
@@ -52,6 +53,7 @@ export function useLiveTerminal() {
           if (message.type === "market" && message.state) {
             setMarket(message.state);
             setWsHealth(message.state.ws_status);
+            setWsReason(message.state.ws_reason || "");
             if (message.dom_delta) setDomDelta(message.dom_delta);
             if (message.tape_trade) setLastTapeTrade(message.tape_trade);
             const tsExchange = message.dom_delta?.ts_exchange ?? message.tape_trade?.ts_exchange;
@@ -62,9 +64,15 @@ export function useLiveTerminal() {
             }
           }
           if (message.type === "snapshot") {
-            if (message.market) setMarket(message.market);
-            const snapshotMarket = message.market_data as Record<string, unknown> | undefined;
-            if (snapshotMarket?.status) setWsHealth(String(snapshotMarket.status));
+            if (message.market) {
+              setMarket(message.market);
+              setWsHealth(message.market.ws_status);
+              setWsReason(message.market.ws_reason || "");
+            } else {
+              const snapshotHealth = message.market_data as { status?: string; reason?: string } | undefined;
+              if (snapshotHealth?.status) setWsHealth(String(snapshotHealth.status));
+              if (snapshotHealth?.reason) setWsReason(String(snapshotHealth.reason));
+            }
             if (Array.isArray(message.dry_run_orders)) setDryRunOrders(message.dry_run_orders);
           }
           if (message.type === "dry_run" && Array.isArray(message.orders as DryRunOrder[] | undefined)) {
@@ -82,6 +90,7 @@ export function useLiveTerminal() {
       .then((state) => {
         setMarket(state);
         setWsHealth(state.ws_status);
+        setWsReason(state.ws_reason || "");
       })
       .catch(() => {
         // Ignore boot race, WS reconnect handles it.
@@ -101,6 +110,7 @@ export function useLiveTerminal() {
     setSymbolCatalog,
     wsConnected,
     wsHealth,
+    wsReason,
     error,
     setError,
     domDelta,

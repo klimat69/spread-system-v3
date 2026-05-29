@@ -5,13 +5,15 @@ import logging
 
 from fastapi import WebSocket
 
+from .lazy_lock import LazyAsyncLock
+
 logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
     def __init__(self) -> None:
         self.active_connections: set[WebSocket] = set()
-        self._lock = asyncio.Lock()
+        self._lock = LazyAsyncLock()
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()

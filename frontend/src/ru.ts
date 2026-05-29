@@ -1,5 +1,5 @@
 export const ru = {
-  loading: "Загрузка терминала MEXC…",
+  loading: "Загрузка терминала MEXC… Первый запуск может занять до 60 секунд.",
   title: "Spread System v3 · Терминал MEXC",
   wsConnected: "WS подключён",
   wsDisconnected: "WS отключён",
@@ -15,8 +15,11 @@ export const ru = {
   popular: "Популярные на MEXC",
   allPairs: "Все пары",
   syncHint: "Список синхронизирован с MEXC через API биржи.",
+  goldFutures: "GOLD Futures (MEXC)",
   goldFuturesHint:
-    "GOLD/USDC во фьючерсах на MEXC обычно нет — используйте спот GOLD(XAUT)/USDC или фьючерс XAUT/USDT.",
+    "Бессрочный контракт GOLD(XAUT)USDT на MEXC — стакан и лента подключаются к XAUT_USDT (как на сайте биржи).",
+  goldFuturesUsdcHint:
+    "Во фьючерсах MEXC нет GOLD/USDC — выберите GOLD Futures ниже (USDT) или спот GOLD(XAUT)/USDC.",
   realtimeMetrics: "Метрики в реальном времени",
   liveBroadcast: "Трансляция (TradingView)",
   openOnMexc: "Открыть на MEXC",
@@ -65,13 +68,30 @@ export const ru = {
   noDryRun: "Пока нет симулированных сделок.",
   feedOk: "OK",
   feedUnhealthy: "Проблема",
+  feedWarming: "прогрев ленты",
   feedRecovering: "Восстановление",
   feedDelayed: "Задержка",
   feedDesync: "Рассинхрон",
   updateBanner: "Обновление",
   checkUpdates: "Проверить обновления",
   updateReadyRestart: "Перезапустить",
-  updateDismiss: "Скрыть"
+  updateDismiss: "Скрыть",
+  chartInterval: "График (обзор)",
+  chart1s: "1 сек",
+  chart5s: "5 сек",
+  chart1m: "1 мин",
+  chartHint:
+    "График TradingView — только обзор: у него своя задержка (секунды), это не поток бота. Торговля идёт по стакану и ленте справа.",
+  feedLatency: "Задержка потока MEXC → экран",
+  whySilent: "Почему бот молчит",
+  whySilentHint: "Проверьте по порядку:",
+  whySilentStart: "Нажмите «Старт» (не только автоторговлю).",
+  whySilentAuto: "Включите «Автоторговля».",
+  whySilentFeed: "Дождитесь «Поток: OK» и цен bid/ask ≠ 0.",
+  whySilentDemo: "Демо-сделки — внизу в «События Paper», не на бирже MEXC.",
+  demoGoldPreset: "Пресет: демо GOLD",
+  demoGoldPresetHint: "Paper + мягкие сигналы + фьючерс XAUT/USDT. Сохраните и нажмите Старт.",
+  demoRelaxed: "Мягкие сигналы (демо)"
 } as const;
 
 export interface UpdaterStatusPayload {
@@ -90,4 +110,49 @@ export function feedStatusRu(status: string): string {
   if (key === "DELAYED") return ru.feedDelayed;
   if (key === "DESYNC") return ru.feedDesync;
   return status;
+}
+
+const feedReasonLabels: Record<string, string> = {
+  tape_not_ready: "нет сделок с MEXC",
+  tape_warming_up: "ожидание ленты сделок",
+  sequence_warming_up: "ожидание версии стакана с MEXC",
+  orderbook_not_ready: "стакан не готов",
+  sequence_not_available: "нет номера версии стакана",
+  orderbook_stale: "стакан устарел",
+  tape_stale: "лента сделок устарела",
+  websocket_silent: "нет данных по WebSocket MEXC",
+  websocket_tls_verification_failed_using_insecure_fallback: "TLS MEXC, повторное подключение",
+  connecting_websocket: "подключение к MEXC",
+  websocket_synchronized: "поток синхронизирован"
+};
+
+export function feedReasonRu(reason: string): string {
+  const key = reason.split(":")[0];
+  return feedReasonLabels[key] ?? reason.replaceAll("_", " ");
+}
+
+const blockedReasonLabels: Record<string, string> = {
+  auto_trade_disabled: "автоторговля выключена",
+  market_data_unhealthy: "поток MEXC не готов",
+  live_validation_required: "нужна проверка биржи для live",
+  invalid_order_book: "пустой стакан",
+  stale_order_book: "стакан устарел",
+  volatility_too_high: "слишком высокая волатильность",
+  liquidity_insufficient: "мало ликвидности",
+  tape_insufficient: "мало сделок в ленте",
+  orderflow_not_aligned: "сигналы стакана и ленты не совпали",
+  resistance_wall_blocks_long: "стена продавцов мешает покупке",
+  support_wall_blocks_short: "стена покупателей мешает продаже",
+  reconciliation_blocked: "блокировка сверки",
+  max_open_orders_reached: "слишком много открытых ордеров"
+};
+
+export function blockedReasonRu(reason: string | null | undefined): string {
+  if (!reason) return ru.none;
+  if (reason.startsWith("market_data_unhealthy:")) {
+    const sub = reason.split(":", 2)[1] ?? "";
+    return `${blockedReasonLabels.market_data_unhealthy}: ${feedReasonRu(sub)}`;
+  }
+  const key = reason.split(":")[0];
+  return blockedReasonLabels[key] ?? reason.replaceAll("_", " ");
 }

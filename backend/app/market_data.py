@@ -14,6 +14,7 @@ import websockets
 from pydantic import BaseModel, Field, ValidationError
 
 from .config import AppConfig
+from .lazy_lock import LazyAsyncLock
 from .database import trade_repository
 from .exchange import exchange_adapter
 from .market_state import MarketState
@@ -69,18 +70,23 @@ def symbol_upper_no_sep(symbol: str) -> str:
     return symbol.replace("/", "").replace(":", "").upper()
 
 
-def mexc_contract_symbol(symbol: str) -> str:
-    """CCXT BTC/USDT or BTC/USDT:USDT -> MEXC futures BTC_USDT."""
-    base = symbol.split(":")[0]
-    return base.replace("/", "_").upper()
-
-
 def canonical_symbol(symbol: str) -> str:
     return symbol.split(":")[0].upper()
 
 
 def exchange_symbol(symbol: str, market_type: str) -> str:
-    return mexc_contract_symbol(symbol) if market_type == "swap" else canonical_symbol(symbol).replace("/", "")
+    from .mexc_symbols import mexc_futures_ws_symbol
+
+    if market_type == "swap":
+        return mexc_futures_ws_symbol(symbol)
+    return canonical_symbol(symbol).replace("/", "")
+
+
+def mexc_contract_symbol(symbol: str) -> str:
+    """CCXT symbol -> MEXC futures REST/WS contract id (XAUT_USDT, BTC_USDT)."""
+    from .mexc_symbols import mexc_futures_ws_symbol
+
+    return mexc_futures_ws_symbol(symbol)
 
 
 def dt_from_ms(ms: int | float | None) -> str | None:
@@ -381,7 +387,7 @@ class MarketDataEngine:
     def __init__(self) -> None:
         self._task: asyncio.Task[None] | None = None
         self._signature: tuple[str, str, str] | None = None
-        self._lock = asyncio.Lock()
+        self._lock = LazyAsyncLock()
         self._book: LocalOrderBook | None = None
         self._trades: deque[TapePrint] = deque(maxlen=1000)
         self._seen_trade_ids: OrderedDict[str, None] = OrderedDict()
@@ -423,6 +429,8 @@ class MarketDataEngine:
         async with self._lock:
             payload = self._state.to_payload()
         payload["health"] = health
+        payload["ws_status"] = str(health.get("status") or payload.get("ws_status") or "STOPPED")
+        payload["ws_reason"] = str(health.get("reason") or payload.get("ws_reason") or "")
         return payload
 
     async def ensure_started(self, config: AppConfig) -> None:
@@ -480,9 +488,37 @@ class MarketDataEngine:
             if self._book is None or self._last_book_monotonic_ns is None:
                 status, reason = "UNHEALTHY", "orderbook_not_ready"
             elif sequence is None:
-                status, reason = "UNHEALTHY", "sequence_not_available"
+                bids, asks = self._book.levels() if self._book else ([], [])
+                book_fresh = (
+                    self._last_book_monotonic_ns is not None
+                    and ns_to_ms(now - self._last_book_monotonic_ns)
+                    <= config.strategy.market_data_stale_after_seconds * 1000
+                )
+                has_levels = bool(
+                    bids
+                    and asks
+                    and bids[0].price > 0
+                    and asks[0].price > 0
+                    and asks[0].price > bids[0].price
+                )
+                if (
+                    config.trading.market_type == "swap"
+                    and has_levels
+                    and book_fresh
+                    and self._status in {"OK", "RECOVERING", "CONNECTING"}
+                ):
+                    status, reason = "RECOVERING", "sequence_warming_up"
+                else:
+                    status, reason = "UNHEALTHY", "sequence_not_available"
             elif self._last_trade_monotonic_ns is None:
-                status, reason = "UNHEALTHY", "tape_not_ready"
+                if (
+                    self._book is not None
+                    and self._last_book_monotonic_ns is not None
+                    and ns_to_ms(now - self._last_book_monotonic_ns) <= 15_000
+                ):
+                    status, reason = "RECOVERING", "tape_warming_up"
+                else:
+                    status, reason = "UNHEALTHY", "tape_not_ready"
             elif self._last_ws_monotonic_ns and ns_to_ms(now - self._last_ws_monotonic_ns) > config.strategy.websocket_silence_seconds * 1000:
                 status, reason = "UNHEALTHY", "websocket_silent"
             elif self._last_book_monotonic_ns and ns_to_ms(now - self._last_book_monotonic_ns) > config.strategy.market_data_stale_after_seconds * 1000:
@@ -593,7 +629,12 @@ class MarketDataEngine:
     def _build_ssl_context(insecure: bool) -> ssl.SSLContext:
         if insecure:
             return ssl._create_unverified_context()  # noqa: SLF001 - explicit fallback for intercepted TLS environments.
-        return ssl.create_default_context()
+        try:
+            import certifi
+
+            return ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            return ssl.create_default_context()
 
     async def _load_snapshot(self, config: AppConfig) -> None:
         started = monotonic_ns()
@@ -698,9 +739,10 @@ class MarketDataEngine:
                     }
                 ).model_dump()
                 self._dom_queue.append(dom_payload)
+                state_payload = await self._public_state_payload(config)
                 await self._notify_subscribers(
                     self._book_subscribers,
-                    {"type": "orderbook_update", "state": self._state.to_payload(), "dom_delta": dom_payload},
+                    {"type": "orderbook_update", "state": state_payload, "dom_delta": dom_payload},
                 )
             except Exception as exc:
                 self._desync_count += 1
@@ -751,12 +793,13 @@ class MarketDataEngine:
                     self._state.ws_status = self._status
                     self._state.ws_reason = self._reason
                     self._state.update_from_book(bids, asks, list(self._trades), self._book.sequence)
+            trade_state_payload = await self._public_state_payload(config)
             await self._notify_subscribers(
                 self._trade_subscribers,
                 {
                     "type": "trade_update",
                     "trade": {"price": trade.price, "size": trade.size, "side": trade.side, "timestamp": event_at},
-                    "state": self._state.to_payload(),
+                    "state": trade_state_payload,
                 },
             )
             notional = trade.price * trade.size
@@ -794,7 +837,7 @@ class MarketDataEngine:
             self._state.candles_1m = list(self._candles_1m.values())[-300:]
             await self._notify_subscribers(
                 self._trade_subscribers,
-                {"type": "trade_payload", "tape_trade": tape_payload, "state": self._state.to_payload()},
+                {"type": "trade_payload", "tape_trade": tape_payload, "state": trade_state_payload},
             )
             if trade.event_time_ms:
                 delay_ms = max(0.0, datetime.now(UTC).timestamp() * 1000 - trade.event_time_ms)
@@ -869,8 +912,17 @@ class MarketDataEngine:
         idx = int(max(0, min(len(ordered) - 1, round((len(ordered) - 1) * 0.95))))
         return ordered[idx]
 
-    @staticmethod
+    async def _public_state_payload(self, config: AppConfig) -> dict[str, Any]:
+        health = await self.health(config, persist=False)
+        async with self._lock:
+            payload = self._state.to_payload()
+        payload["health"] = health
+        payload["ws_status"] = str(health.get("status") or payload.get("ws_status") or "STOPPED")
+        payload["ws_reason"] = str(health.get("reason") or payload.get("ws_reason") or "")
+        return payload
+
     async def _notify_subscribers(
+        self,
         subscribers: list[Callable[[dict[str, Any]], Awaitable[None] | None]],
         payload: dict[str, Any],
     ) -> None:

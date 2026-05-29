@@ -40,6 +40,7 @@ class TradingConfig(BaseModel):
     auto_trade_enabled: bool = False
     use_realtime_dom_engine: bool = True
     require_validation: bool = True
+    demo_relaxed_signals: bool = False
 
     @field_validator("symbol")
     @classmethod
@@ -125,10 +126,19 @@ class AppConfig(BaseModel):
 
 def migrate_config_payload(payload: dict) -> dict:
     """Force MEXC-only deployment; coerce legacy binance/bybit configs."""
+    from .mexc_symbols import resolve_mexc_trading_symbol
+
     exchange = dict(payload.get("exchange") or {})
     exchange["name"] = "mexc"
     exchange["sandbox"] = False
     payload["exchange"] = exchange
+    trading = dict(payload.get("trading") or {})
+    market_type = str(trading.get("market_type") or "swap")
+    symbol = str(trading.get("symbol") or "BTC/USDT")
+    trading["symbol"] = resolve_mexc_trading_symbol(symbol, market_type)
+    if market_type == "swap" and ("GOLD" in symbol.upper() or "XAUT" in symbol.upper()):
+        trading["market_type"] = "swap"
+    payload["trading"] = trading
     return payload
 
 

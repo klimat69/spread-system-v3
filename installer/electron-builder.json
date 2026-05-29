@@ -45,17 +45,13 @@
     {
       "from": "../requirements.txt",
       "to": "requirements.txt"
+    },
+    {
+      "from": "../installer/app-update.yml",
+      "to": "app-update.yml"
     }
   ],
   "artifactName": "${productName}-${os}-${arch}.${ext}",
-  "publish": [
-    {
-      "provider": "github",
-      "owner": "${env.GH_OWNER}",
-      "repo": "${env.GH_REPO}",
-      "releaseType": "release"
-    }
-  ],
   "win": {
     "target": [
       {

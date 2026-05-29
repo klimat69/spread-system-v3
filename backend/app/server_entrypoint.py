@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import signal
 import sys
 from pathlib import Path
 
@@ -25,13 +24,13 @@ def _run() -> int:
     host = os.environ.get("SPREAD_BACKEND_HOST", "127.0.0.1")
     port = int(os.environ.get("SPREAD_BACKEND_PORT", "8000"))
 
-    # Graceful shutdown: uvicorn handles signals, but pyinstaller entrypoints can vary.
-    def _handle_sigterm(*_: object) -> None:
-        raise SystemExit(0)
-
-    signal.signal(signal.SIGTERM, _handle_sigterm)
-
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_level="info",
+        loop="asyncio",
+    )
     return 0
 
 

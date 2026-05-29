@@ -139,9 +139,24 @@ class TradingEngine:
             self._last_status_broadcast_ns = now_ns
             await manager.broadcast({"type": "status", "status": self.status()})
 
+    @staticmethod
+    def _market_feed_ready(state: MarketState, config: AppConfig) -> bool:
+        if state.ws_status == "OK":
+            return True
+        if (
+            config.trading.mode == "paper"
+            and config.trading.demo_relaxed_signals
+            and state.ws_status == "RECOVERING"
+            and state.ws_reason in {"tape_warming_up", "sequence_warming_up"}
+            and state.best_bid > 0
+            and state.best_ask > 0
+        ):
+            return True
+        return False
+
     async def _evaluate_event_driven(self, state: MarketState) -> None:
         config = config_service.load()
-        if state.ws_status != "OK":
+        if not self._market_feed_ready(state, config):
             self._blocked_reason = f"market_data_unhealthy:{state.ws_reason}"
             return
         if not config.trading.auto_trade_enabled:

@@ -427,8 +427,28 @@ function notifyRendererUpdater(payload) {
   mainWindow.webContents.send("updater-status", payload);
 }
 
+function updaterFeedPath() {
+  return path.join(process.resourcesPath, "app-update.yml");
+}
+
+function canUseAutoUpdater() {
+  if (!isPackaged || !autoUpdater) return false;
+  return fs.existsSync(updaterFeedPath());
+}
+
+function isUpdaterConfigError(message) {
+  return (
+    message.includes("app-update.yml") ||
+    message.includes("app-update.yaml") ||
+    (message.includes("ENOENT") && message.includes("Resources"))
+  );
+}
+
 function setupAutoUpdater() {
-  if (!isPackaged || !autoUpdater) return;
+  if (!canUseAutoUpdater()) {
+    appendUpdaterLog("Auto-update skipped: app-update.yml is not bundled in this build.");
+    return;
+  }
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
@@ -469,6 +489,14 @@ function setupAutoUpdater() {
   autoUpdater.on("error", (error) => {
     const message = error?.message || String(error);
     appendUpdaterLog(`Updater error: ${message}`);
+    if (isUpdaterConfigError(message)) {
+      notifyRendererUpdater({
+        state: "idle",
+        currentVersion: app.getVersion(),
+        message: "Проверка обновлений недоступна в этой локальной сборке."
+      });
+      return;
+    }
     const signatureIssue = message.includes("code signature");
     if (process.platform === "darwin" && signatureIssue && getPendingZipPath()) {
       appendUpdaterLog("Using manual install path (unsigned macOS build)");
@@ -520,13 +548,81 @@ function setupAutoUpdater() {
   }, 30 * 60 * 1000);
 }
 
+function focusMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+async function startTradingEngine() {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port: 8000,
+        path: "/start",
+        method: "POST",
+        timeout: 5000
+      },
+      (res) => {
+        if ((res.statusCode || 500) >= 400) {
+          resolve(false);
+          return;
+        }
+        res.on("data", () => {});
+        res.on("end", () => resolve(true));
+      }
+    );
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.end();
+  });
+}
+
+async function bootstrapBackendServices() {
+  const backendReady = await waitForBackend();
+  if (!backendReady) {
+    dialog.showErrorBox(
+      "Backend failed to start",
+      `The local backend did not become ready. Check logs at ${backendLogPath || "backend.log"}.`
+    );
+    return;
+  }
+
+  try {
+    await injectCredentialsFromKeychain();
+  } catch (_e) {
+    // Non-fatal: live mode remains blocked until credentials are injected via wizard.
+  }
+
+  const engineStarted = await startTradingEngine();
+  if (!engineStarted) {
+    dialog.showErrorBox(
+      "Engine failed to start",
+      "The backend started, but the trading engine did not start. Check backend logs."
+    );
+  }
+}
+
 async function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    focusMainWindow();
+    return;
+  }
+
   const started = startBackend();
+
   mainWindow = new BrowserWindow({
     width: 1500,
     height: 980,
     minWidth: 1100,
     minHeight: 720,
+    show: true,
+    center: true,
     backgroundColor: "#07111f",
     title: "Spread System v3",
     webPreferences: {
@@ -535,6 +631,12 @@ async function createWindow() {
       nodeIntegration: false
     }
   });
+  const showFallbackTimer = setTimeout(() => focusMainWindow(), 1500);
+  mainWindow.once("ready-to-show", () => {
+    clearTimeout(showFallbackTimer);
+    focusMainWindow();
+  });
+
   const rendererLogPath = path.join(runtimeLogsDir, "renderer.log");
   updaterLogPath = path.join(runtimeLogsDir, "updater.log");
   appendUpdaterLog(`App version ${app.getVersion()} started`);
@@ -543,6 +645,7 @@ async function createWindow() {
     rendererLog.write(`did-fail-load code=${errorCode} desc=${errorDescription} url=${validatedURL}\n`);
   });
   mainWindow.webContents.on("did-finish-load", async () => {
+    focusMainWindow();
     try {
       const probe = await mainWindow.webContents.executeJavaScript(
         `(() => ({
@@ -563,57 +666,15 @@ async function createWindow() {
   });
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     rendererLog.write(`render-process-gone reason=${details.reason} exitCode=${details.exitCode}\n`);
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (details.reason === "clean-exit") return;
+    mainWindow.reload();
+    focusMainWindow();
   });
-  if (!started) {
-    // startBackend() already emitted user-facing error details.
-    return;
-  }
-  const backendReady = await waitForBackend();
-  if (!backendReady) {
-    dialog.showErrorBox("Backend failed to start", `The local backend did not become ready. Check logs at ${backendLogPath || "backend.log"}.`);
-  }
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
 
-  if (backendReady) {
-    // Inject stored secrets before starting the trading engine loops.
-    try {
-      await injectCredentialsFromKeychain();
-    } catch (_e) {
-      // Non-fatal: live mode remains blocked until credentials are injected via wizard.
-    }
-  }
-
-  // Ensure the trading engine loops are running (websocket live stream depends on it).
-  if (backendReady) {
-    const engineStarted = await new Promise((resolve) => {
-      const req = http.request(
-        {
-          hostname: "127.0.0.1",
-          port: 8000,
-          path: "/start",
-          method: "POST",
-          timeout: 5000
-        },
-        (res) => {
-          if ((res.statusCode || 500) >= 400) {
-            resolve(false);
-            return;
-          }
-          // Drain response then resolve.
-          res.on("data", () => {});
-          res.on("end", () => resolve(true));
-        }
-      );
-      req.on("error", () => resolve(false));
-      req.on("timeout", () => {
-        req.destroy();
-        resolve(false);
-      });
-      req.end();
-    });
-    if (!engineStarted) {
-      dialog.showErrorBox("Engine failed to start", "The backend started, but the trading engine did not start. Check backend logs.");
-    }
-  }
   try {
     if (isPackaged) await mainWindow.loadFile(frontendIndex);
     else await mainWindow.loadURL(frontendIndex);
@@ -621,7 +682,15 @@ async function createWindow() {
   } catch (error) {
     rendererLog.write(`load frontend failed: ${error?.message || "unknown"}\n`);
     dialog.showErrorBox("Frontend failed to load", `The desktop UI failed to load. Check logs at ${rendererLogPath}.`);
+    focusMainWindow();
+    return;
   }
+
+  if (!started) {
+    focusMainWindow();
+    return;
+  }
+  void bootstrapBackendServices();
 }
 
 ipcMain.handle("open-backend-log", async () => {
@@ -631,8 +700,11 @@ ipcMain.handle("open-backend-log", async () => {
 });
 
 ipcMain.handle("updater-check-now", async () => {
-  if (!isPackaged || !autoUpdater) {
-    return { ok: false, message: "Проверка обновлений доступна только в установленной версии." };
+  if (!canUseAutoUpdater()) {
+    return {
+      ok: false,
+      message: "Проверка обновлений недоступна: в сборке нет app-update.yml (установите релиз с GitHub)."
+    };
   }
   try {
     await autoUpdater.checkForUpdates();
@@ -649,7 +721,7 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  void createWindow();
 });
 app.on("before-quit", () => {
   if (updaterInterval) {

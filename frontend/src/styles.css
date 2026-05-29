@@ -73,6 +73,13 @@ select:focus {
   padding: 28px 0 48px;
 }
 
+.loading-hint {
+  margin-top: 0.75rem;
+  max-width: 32rem;
+  font-size: 0.9rem;
+  color: #8fa3bf;
+}
+
 .loading {
   min-height: 100vh;
   display: grid;
@@ -101,7 +108,8 @@ select:focus {
 }
 
 .ok,
-.bad {
+.bad,
+.warn {
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 0.82rem;
@@ -118,6 +126,105 @@ select:focus {
   color: #fca5a5;
   border-color: rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.14);
+}
+
+.warn {
+  color: #fde68a;
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.gold-futures-block {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.12), rgba(15, 23, 42, 0.4));
+}
+
+.gold-head {
+  color: #fcd34d;
+  margin-bottom: 6px;
+}
+
+.gold-futures-btn {
+  width: 100%;
+  margin-top: 8px;
+  text-align: left;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.gold-futures-btn.active {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.5);
+}
+
+.gold-futures-btn span {
+  display: block;
+  font-weight: 600;
+  color: #fde68a;
+}
+
+.gold-futures-btn small {
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+.demo-preset-btn {
+  width: 100%;
+  margin-top: 8px;
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(30, 58, 138, 0.35);
+  color: #bfdbfe;
+}
+
+.chart-interval-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chart-interval-tabs button {
+  padding: 2px 8px;
+  font-size: 0.75rem;
+}
+
+.broadcast-header {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.why-silent-block {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.why-silent-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 0.88rem;
+}
+
+.why-silent-list .ok-item {
+  color: #86efac;
+}
+
+.why-silent-list .bad-item {
+  color: #fca5a5;
+}
+
+.why-silent-list .warn-item {
+  color: #fde68a;
+}
+
+.panel-inner summary {
+  cursor: pointer;
+  font-weight: 600;
 }
 
 .alert {

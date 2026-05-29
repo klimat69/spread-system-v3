@@ -1,0 +1,4 @@
+provider: github
+owner: klimat69
+repo: spread-system-v3
+updaterCacheDirName: spread-system-v3-desktop-updater

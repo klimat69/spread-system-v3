@@ -22,9 +22,16 @@ from .validate_exchange import validate as validate_exchange
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 app = FastAPI(title="Spread System v3 API", version="3.0.0")
+# Desktop Electron loads the UI from file:// (Origin: null). Dev uses Vite on :5173.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "app://spread-system-v3"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "app://spread-system-v3",
+        "null",
+    ],
+    allow_origin_regex=r"^app://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -190,6 +197,18 @@ async def get_symbols(
         raw_popular = popular_by_quote.get(selected_quote, [])
         if isinstance(raw_popular, list):
             quote_popular = [s for s in raw_popular if s in symbols]
+    from .mexc_symbols import GOLD_FUTURES_CCXT_CANDIDATES, resolve_mexc_trading_symbol
+
+    usdt_swap = symbols_by_quote.get("USDT", []) if isinstance(symbols_by_quote.get("USDT"), list) else []
+    gold_futures_symbol: str | None = None
+    if market_type == "swap":
+        for candidate in GOLD_FUTURES_CCXT_CANDIDATES:
+            hit = next((s for s in usdt_swap if s.upper() == candidate.upper()), None)
+            if hit:
+                gold_futures_symbol = hit
+                break
+        if gold_futures_symbol is None:
+            gold_futures_symbol = resolve_mexc_trading_symbol("XAUT/USDT", "swap")
     return {
         "exchange": "mexc",
         "market_type": market_type,
@@ -199,12 +218,34 @@ async def get_symbols(
         "symbols": symbols,
         "popular_symbols": quote_popular,
         "symbols_meta": symbols_meta,
+        "gold_futures_symbol": gold_futures_symbol,
     }
 
 
 @app.post("/config")
 async def save_config(config: AppConfig) -> dict:
+    from .mexc_symbols import resolve_mexc_trading_symbol
+
     try:
+        available: list[str] = []
+        try:
+            catalog = await exchange_adapter.fetch_symbol_catalog(config, config.trading.market_type)
+            by_quote = catalog.get("symbols_by_quote")
+            if isinstance(by_quote, dict):
+                for items in by_quote.values():
+                    if isinstance(items, list):
+                        available.extend(items)
+        except Exception:
+            logger.debug("Symbol catalog unavailable during config save", exc_info=True)
+        resolved = resolve_mexc_trading_symbol(
+            config.trading.symbol,
+            config.trading.market_type,
+            available=available or None,
+        )
+        if resolved != config.trading.symbol:
+            config = config.model_copy(
+                update={"trading": config.trading.model_copy(update={"symbol": resolved})}
+            )
         saved = config_service.save(config)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc

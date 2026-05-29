@@ -19,6 +19,7 @@ export interface AppConfig {
     live_trading_enabled: boolean;
     auto_trade_enabled: boolean;
     use_realtime_dom_engine?: boolean;
+    demo_relaxed_signals?: boolean;
   };
   fees: {
     maker: number;
@@ -134,6 +135,8 @@ export interface SymbolListResponse {
   symbols: string[];
   popular_symbols?: string[];
   symbols_meta?: Record<string, SymbolMeta>;
+  /** CCXT symbol for MEXC GOLD(XAUT)USDT perpetual when market_type is swap */
+  gold_futures_symbol?: string | null;
 }
 
 export interface MarketBookLevel {

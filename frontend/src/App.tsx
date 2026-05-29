@@ -2,19 +2,56 @@ import { useEffect, useMemo, useState } from "react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "./api";
 import {
+  type ChartInterval,
   displaySymbol,
+  isGoldOrXaut,
   mexcPlatformUrl,
   orderedSymbolList,
   parseLocaleNumber,
   quoteFromSymbol,
+  resolveGoldFuturesSymbol,
   symbolNote,
   tradingViewEmbedUrl
 } from "./mexcDisplay";
-import { feedStatusRu, ru, type UpdaterStatusPayload } from "./ru";
+import { blockedReasonRu, feedReasonRu, feedStatusRu, ru, type UpdaterStatusPayload } from "./ru";
 import { useLiveTerminal } from "./useLiveTerminal";
 import type { AppConfig, MarketType } from "./types";
 
 const percent = new Intl.NumberFormat("ru-RU", { style: "percent", maximumFractionDigits: 3 });
+
+function buildDemoGoldConfig(config: AppConfig, goldSymbol: string): AppConfig {
+  return {
+    ...config,
+    trading: {
+      ...config.trading,
+      mode: "paper",
+      market_type: "swap",
+      symbol: goldSymbol,
+      auto_trade_enabled: true,
+      demo_relaxed_signals: true,
+      live_trading_enabled: false
+    },
+    strategy: {
+      ...config.strategy,
+      imbalance_limit: 0.18,
+      tape_aggression_entry_threshold: 0.1,
+      momentum_burst_multiplier: 1.15,
+      min_liquidity: 100,
+      min_tape_notional: 40,
+      max_holding_seconds: 5,
+      market_data_stale_after_seconds: 3,
+      max_orderbook_age_seconds: 2,
+      tape_window_seconds: 2,
+      entry_cooldown_seconds: 2
+    },
+    simple_scalp: {
+      ...config.simple_scalp!,
+      spread_min: 0.0001,
+      imbalance_min: 0.12,
+      aggression_min: 0.08
+    }
+  };
+}
 
 function normalizeMexcConfig(config: AppConfig): AppConfig {
   return {
@@ -23,7 +60,8 @@ function normalizeMexcConfig(config: AppConfig): AppConfig {
     trading: {
       ...config.trading,
       market_type: config.trading.market_type ?? "swap",
-      auto_trade_enabled: config.trading.auto_trade_enabled ?? false
+      auto_trade_enabled: config.trading.auto_trade_enabled ?? false,
+      demo_relaxed_signals: config.trading.demo_relaxed_signals ?? false
     },
     simple_scalp: config.simple_scalp ?? {
       spread_min: 0.0002,
@@ -36,14 +74,26 @@ function normalizeMexcConfig(config: AppConfig): AppConfig {
 }
 
 export default function App() {
-  const { status, market, dryRunOrders, wsConnected, wsHealth, error, symbolCatalog, setSymbolCatalog, setError } =
-    useLiveTerminal();
+  const {
+    status,
+    market,
+    dryRunOrders,
+    wsConnected,
+    wsHealth,
+    wsReason,
+    error,
+    symbolCatalog,
+    setSymbolCatalog,
+    setError,
+    tickToRenderMs
+  } = useLiveTerminal();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const [quoteCurrency, setQuoteCurrency] = useState("USDT");
   const [symbolSearch, setSymbolSearch] = useState("");
   const [midSeries, setMidSeries] = useState<Array<{ t: string; mid: number }>>([]);
   const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatusPayload | null>(null);
+  const [chartInterval, setChartInterval] = useState<ChartInterval>("1S");
 
   const quotes = symbolCatalog?.quotes ?? [];
   const orderedSymbols = useMemo(
@@ -58,6 +108,12 @@ export default function App() {
   }, [symbolCatalog, symbolSearch]);
   const restSymbols = orderedSymbols.filter((s) => !popularSymbols.includes(s)).slice(0, 200);
 
+  const goldFuturesSymbol = useMemo(
+    () => (symbolCatalog ? resolveGoldFuturesSymbol(symbolCatalog) : "XAUT/USDT:USDT"),
+    [symbolCatalog]
+  );
+  const showGoldFuturesSection = config?.trading.market_type === "swap";
+
   const pairNote = config ? symbolNote(config.trading.symbol, symbolCatalog) : "";
 
   useEffect(() => {
@@ -69,18 +125,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
-      try {
-        const cfg = normalizeMexcConfig(await api.config());
-        setConfig(cfg);
-        const quote = quoteFromSymbol(cfg.trading.symbol);
-        const catalog = await api.symbols(cfg.trading.market_type, quote);
-        setSymbolCatalog(catalog);
-        setQuoteCurrency(catalog.quote ?? quote);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+      for (let attempt = 0; attempt < 45 && !cancelled; attempt += 1) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
+        try {
+          const cfg = normalizeMexcConfig(await api.config());
+          if (cancelled) return;
+          setConfig(cfg);
+          const quote = quoteFromSymbol(cfg.trading.symbol);
+          const catalog = await api.symbols(cfg.trading.market_type, quote);
+          if (cancelled) return;
+          setSymbolCatalog(catalog);
+          setQuoteCurrency(catalog.quote ?? quote);
+          setError(null);
+          return;
+        } catch (err) {
+          if (cancelled) return;
+          setError(err instanceof Error ? err.message : String(err));
+        }
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -125,12 +193,38 @@ export default function App() {
     }
   }
 
-  function pickSymbol(symbol: string) {
+  function pickSymbol(symbol: string, marketType?: MarketType) {
     if (!config) return;
-    setConfig({ ...config, trading: { ...config.trading, symbol } });
+    const nextMarket = marketType ?? config.trading.market_type;
+    setConfig({
+      ...config,
+      trading: { ...config.trading, market_type: nextMarket, symbol }
+    });
+    if (quoteFromSymbol(symbol) !== quoteCurrency) {
+      setQuoteCurrency(quoteFromSymbol(symbol));
+    }
   }
 
-  if (!config) return <main className="loading">{ru.loading}</main>;
+  function pickGoldFutures() {
+    if (!config) return;
+    setQuoteCurrency("USDT");
+    pickSymbol(goldFuturesSymbol, "swap");
+  }
+
+  function applyDemoGoldPreset() {
+    if (!config) return;
+    setConfig(buildDemoGoldConfig(config, goldFuturesSymbol));
+    setQuoteCurrency("USDT");
+  }
+
+  if (!config) {
+    return (
+      <main className="loading">
+        {ru.loading}
+        {error ? <p className="loading-hint">{error}</p> : null}
+      </main>
+    );
+  }
 
   const activeDisplay = displaySymbol(config.trading.symbol, symbolCatalog);
 
@@ -141,8 +235,12 @@ export default function App() {
           <strong>{ru.title}</strong>
           <span className="pair-badge">{activeDisplay}</span>
           <span className={wsConnected ? "ok" : "bad"}>{wsConnected ? ru.wsConnected : ru.wsDisconnected}</span>
-          <span className={wsHealth === "OK" ? "ok" : "bad"}>
+          <span
+            className={wsHealth === "OK" ? "ok" : wsHealth === "RECOVERING" ? "warn" : "bad"}
+            title={wsReason ? feedReasonRu(wsReason) : undefined}
+          >
             {ru.feed}: {feedStatusRu(wsHealth)}
+            {wsHealth !== "OK" && wsReason ? ` (${feedReasonRu(wsReason)})` : ""}
           </span>
         </div>
         <div className="top-right">
@@ -205,8 +303,14 @@ export default function App() {
                 const catalog = await loadSymbols(marketType, "USDT");
                 const nextQuote = catalog.quote ?? "USDT";
                 setQuoteCurrency(nextQuote);
-                const first = catalog.symbols[0] ?? config.trading.symbol;
-                setConfig({ ...config, trading: { ...config.trading, market_type: marketType, symbol: first } });
+                const preferred =
+                  marketType === "swap"
+                    ? resolveGoldFuturesSymbol(catalog)
+                    : catalog.symbols[0] ?? config.trading.symbol;
+                setConfig({
+                  ...config,
+                  trading: { ...config.trading, market_type: marketType, symbol: preferred }
+                });
               }}
             >
               <option value="spot">{ru.spot}</option>
@@ -232,8 +336,26 @@ export default function App() {
               ))}
             </div>
           )}
+          {showGoldFuturesSection && (
+            <div className="gold-futures-block">
+              <h4 className="subhead gold-head">{ru.goldFutures}</h4>
+              <p className="hint">{ru.goldFuturesHint}</p>
+              <button
+                type="button"
+                className={`gold-futures-btn ${config.trading.symbol === goldFuturesSymbol ? "active" : ""}`}
+                onClick={pickGoldFutures}
+              >
+                <span>GOLD(XAUT)USDT</span>
+                <small>{goldFuturesSymbol}</small>
+              </button>
+              <button type="button" className="demo-preset-btn" onClick={applyDemoGoldPreset}>
+                {ru.demoGoldPreset}
+              </button>
+              <p className="hint">{ru.demoGoldPresetHint}</p>
+            </div>
+          )}
           {config.trading.market_type === "swap" && quoteCurrency === "USDC" && (
-            <p className="hint warn">{ru.goldFuturesHint}</p>
+            <p className="hint warn">{ru.goldFuturesUsdcHint}</p>
           )}
           <input placeholder={ru.searchPair} value={symbolSearch} onChange={(e) => setSymbolSearch(e.target.value)} />
           {popularSymbols.length > 0 && (
@@ -289,16 +411,36 @@ export default function App() {
           </div>
           <div className="broadcast-header">
             <strong>{ru.liveBroadcast}</strong>
+            <div className="chart-interval-tabs">
+              <span className="hint">{ru.chartInterval}</span>
+              {(
+                [
+                  ["1S", ru.chart1s],
+                  ["5S", ru.chart5s],
+                  ["1", ru.chart1m]
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={chartInterval === value ? "active" : ""}
+                  onClick={() => setChartInterval(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <a href={mexcPlatformUrl(config.trading.symbol, config.trading.market_type, symbolCatalog)} target="_blank" rel="noreferrer">
               {ru.openOnMexc}
             </a>
           </div>
+          <p className="hint">{ru.chartHint}</p>
           {pairNote && <p className="hint warn">{pairNote}</p>}
           <div className="broadcast-frame-wrap">
             <iframe
-              key={`${config.trading.market_type}-${config.trading.symbol}`}
+              key={`${config.trading.market_type}-${config.trading.symbol}-${chartInterval}`}
               title={ru.liveBroadcast}
-              src={tradingViewEmbedUrl(config.trading.symbol, config.trading.market_type, symbolCatalog)}
+              src={tradingViewEmbedUrl(config.trading.symbol, config.trading.market_type, symbolCatalog, chartInterval)}
               className="broadcast-frame"
               loading="lazy"
             />
@@ -320,6 +462,16 @@ export default function App() {
               <span>{ru.imbalance}</span>
               <strong>{percent.format(market?.imbalance ?? 0)}</strong>
             </div>
+            <div>
+              <span>{ru.feedLatency}</span>
+              <strong>
+                {tickToRenderMs > 0
+                  ? `${Math.round(tickToRenderMs)} мс`
+                  : market?.clock_skew_ms != null
+                    ? `${Math.round(market.clock_skew_ms)} мс`
+                    : "—"}
+              </strong>
+            </div>
           </div>
           <div className="status-row">
             <span>
@@ -329,9 +481,28 @@ export default function App() {
               {ru.auto}: {config.trading.auto_trade_enabled ? "ВКЛ" : "ВЫКЛ"}
             </span>
             <span>
-              {ru.blocked}: {status.blocked_reason ?? ru.none}
+              {ru.blocked}: {blockedReasonRu(status.blocked_reason)}
             </span>
           </div>
+
+          <details className="why-silent-block panel-inner">
+            <summary>{ru.whySilent}</summary>
+            <p className="hint">{ru.whySilentHint}</p>
+            <ul className="why-silent-list">
+              <li className={status.running ? "ok-item" : "bad-item"}>{ru.whySilentStart}</li>
+              <li className={config.trading.auto_trade_enabled ? "ok-item" : "bad-item"}>{ru.whySilentAuto}</li>
+              <li className={wsHealth === "OK" ? "ok-item" : wsHealth === "RECOVERING" ? "warn-item" : "bad-item"}>
+                {ru.whySilentFeed}
+                {wsHealth !== "OK" && wsReason ? ` (${feedReasonRu(wsReason)})` : ""}
+              </li>
+              <li>{ru.whySilentDemo}</li>
+              {status.blocked_reason && (
+                <li className="bad-item">
+                  {ru.blocked}: {blockedReasonRu(status.blocked_reason)}
+                </li>
+              )}
+            </ul>
+          </details>
 
           <details className="settings-block" open>
             <summary>{ru.settingsConnection}</summary>
@@ -375,6 +546,19 @@ export default function App() {
                   type="checkbox"
                   checked={config.trading.live_trading_enabled}
                   onChange={(e) => setConfig({ ...config, trading: { ...config.trading, live_trading_enabled: e.target.checked } })}
+                />
+              </label>
+              <label className="switch">
+                {ru.demoRelaxed}
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.trading.demo_relaxed_signals)}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      trading: { ...config.trading, demo_relaxed_signals: e.target.checked }
+                    })
+                  }
                 />
               </label>
               <label>

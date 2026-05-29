@@ -135,6 +135,28 @@ class StrategyEngine:
         self._baseline_tape_notional: float | None = None
         self._last_support_wall_side: str | None = None
 
+    @staticmethod
+    def _entry_thresholds(config: AppConfig) -> dict[str, float | bool]:
+        s = config.strategy
+        relaxed = config.trading.mode == "paper" and config.trading.demo_relaxed_signals
+        if not relaxed:
+            return {
+                "imbalance_limit": s.imbalance_limit,
+                "tape_aggression_entry_threshold": s.tape_aggression_entry_threshold,
+                "momentum_burst_multiplier": s.momentum_burst_multiplier,
+                "min_liquidity": s.min_liquidity,
+                "min_tape_notional": s.min_tape_notional,
+                "ignore_walls": False,
+            }
+        return {
+            "imbalance_limit": min(s.imbalance_limit, 0.18),
+            "tape_aggression_entry_threshold": min(s.tape_aggression_entry_threshold, 0.10),
+            "momentum_burst_multiplier": min(s.momentum_burst_multiplier, 1.15),
+            "min_liquidity": min(s.min_liquidity, 100.0),
+            "min_tape_notional": min(s.min_tape_notional, 40.0),
+            "ignore_walls": True,
+        }
+
     def evaluate(self, snapshot: MarketSnapshot, config: AppConfig) -> StrategyDecision:
         self._mid_prices.append(snapshot.mid)
         self._mid_prices = self._mid_prices[-config.strategy.volatility_window:]
@@ -149,25 +171,33 @@ class StrategyEngine:
             return self._decision(False, False, "invalid_order_book", side, snapshot, volatility, tape, micro_trend, entry_reason, exit_reason, walls, config)
         if self._snapshot_age(snapshot) > config.strategy.max_orderbook_age_seconds:
             return self._decision(False, False, "stale_order_book", side, snapshot, volatility, tape, micro_trend, entry_reason, exit_reason, walls, config)
-        if volatility >= config.strategy.volatility_threshold:
+        thresholds = self._entry_thresholds(config)
+        vol_cap = config.strategy.volatility_threshold * (1.5 if thresholds["ignore_walls"] else 1.0)
+        if volatility >= vol_cap:
             return self._decision(False, bool(exit_reason), "volatility_too_high", side, snapshot, volatility, tape, micro_trend, entry_reason, exit_reason, walls, config)
-        if snapshot.liquidity < config.strategy.min_liquidity:
+        min_liquidity = float(thresholds["min_liquidity"])
+        if snapshot.liquidity < min_liquidity:
             return self._decision(False, bool(exit_reason), "liquidity_insufficient", side, snapshot, volatility, tape, micro_trend, entry_reason, exit_reason, walls, config)
-        if tape.total_notional < config.strategy.min_tape_notional:
+        min_tape = float(thresholds["min_tape_notional"])
+        if tape.total_notional < min_tape:
             return self._decision(False, bool(exit_reason), "tape_insufficient", side, snapshot, volatility, tape, micro_trend, entry_reason, exit_reason, walls, config)
 
         has_bid_wall = any(wall.side == "bid" for wall in walls)
         has_ask_wall = any(wall.side == "ask" for wall in walls)
-        strong_bid_pressure = snapshot.imbalance >= config.strategy.imbalance_limit
-        strong_ask_pressure = snapshot.imbalance <= -config.strategy.imbalance_limit
-        buy_aggression = tape.net_aggression >= config.strategy.tape_aggression_entry_threshold
-        sell_aggression = tape.net_aggression <= -config.strategy.tape_aggression_entry_threshold
-        burst = tape.burst_ratio >= config.strategy.momentum_burst_multiplier
+        imbalance_limit = float(thresholds["imbalance_limit"])
+        aggression_threshold = float(thresholds["tape_aggression_entry_threshold"])
+        burst_threshold = float(thresholds["momentum_burst_multiplier"])
+        ignore_walls = bool(thresholds["ignore_walls"])
+        strong_bid_pressure = snapshot.imbalance >= imbalance_limit
+        strong_ask_pressure = snapshot.imbalance <= -imbalance_limit
+        buy_aggression = tape.net_aggression >= aggression_threshold
+        sell_aggression = tape.net_aggression <= -aggression_threshold
+        burst = tape.burst_ratio >= burst_threshold
 
-        if strong_bid_pressure and buy_aggression and burst and not has_ask_wall:
+        if strong_bid_pressure and buy_aggression and burst and (ignore_walls or not has_ask_wall):
             side = "buy"
             entry_reason = "bid_pressure_buy_aggression_momentum"
-        elif strong_ask_pressure and sell_aggression and burst and not has_bid_wall:
+        elif strong_ask_pressure and sell_aggression and burst and (ignore_walls or not has_bid_wall):
             side = "sell"
             entry_reason = "ask_pressure_sell_aggression_momentum"
         else:
