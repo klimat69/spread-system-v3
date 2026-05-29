@@ -60,7 +60,8 @@
         ]
       }
     ],
-    "artifactName": "spread-system-v3-setup.${ext}"
+    "artifactName": "spread-system-v3-setup.${ext}",
+    "executableName": "Spread System v3"
   },
   "nsis": {
     "oneClick": false,
@@ -76,16 +77,18 @@
   "mac": {
     "target": [
       {
-        "target": "dmg",
-        "arch": ["universal"]
+        "target": "zip",
+        "arch": ["x64", "arm64"]
       },
       {
-        "target": "zip",
-        "arch": ["universal"]
+        "target": "dmg",
+        "arch": ["x64", "arm64"]
       }
     ],
-    "artifactName": "spread-system-v3.${ext}",
-    "category": "public.app-category.finance"
+    "artifactName": "spread-system-v3-${arch}.${ext}",
+    "category": "public.app-category.finance",
+    "hardenedRuntime": false,
+    "gatekeeperAssess": false
   },
   "linux": {
     "target": [

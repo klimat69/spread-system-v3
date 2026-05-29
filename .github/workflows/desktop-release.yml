@@ -53,3 +53,19 @@ jobs:
           python -m pip install -r requirements.txt pyinstaller
       - name: Build and publish Windows release
         run: npm run release:win:publish
+
+  verify-release:
+    needs: [release-mac, release-win]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_OWNER: ${{ github.repository_owner }}
+      GH_REPO: ${{ github.event.repository.name }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify GitHub release updater assets
+        run: node desktop/scripts/verify-github-release.js "${{ github.ref_name }}"

@@ -360,8 +360,16 @@ function getUpdaterPendingDir() {
 }
 
 function getPendingZipPath() {
-  const zipPath = path.join(getUpdaterPendingDir(), "spread-system-v3.zip");
-  return fs.existsSync(zipPath) ? zipPath : null;
+  const pendingDir = getUpdaterPendingDir();
+  if (!fs.existsSync(pendingDir)) return null;
+  const zips = fs
+    .readdirSync(pendingDir)
+    .filter((name) => name.endsWith(".zip"))
+    .map((name) => path.join(pendingDir, name))
+    .filter((candidate) => fs.statSync(candidate).isFile());
+  if (!zips.length) return null;
+  zips.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  return zips[0];
 }
 
 function stopBackendForUpdate() {
@@ -458,6 +466,9 @@ function setupAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
+  if (process.platform === "darwin") {
+    autoUpdater.disableDifferentialDownload = true;
+  }
 
   autoUpdater.on("checking-for-update", () => {
     appendUpdaterLog("Checking for updates...");
@@ -534,7 +545,7 @@ function setupAutoUpdater() {
   });
   autoUpdater.on("update-downloaded", async (info) => {
     const version = info?.version || "новая";
-    appendUpdaterLog(`Update downloaded: ${version}`);
+    appendUpdaterLog(`Update downloaded: ${version} pendingZip=${getPendingZipPath() || "none"}`);
     notifyRendererUpdater({
       state: "ready",
       version,
@@ -544,6 +555,7 @@ function setupAutoUpdater() {
       applyPendingUpdate();
       return;
     }
+    const useManualMacInstall = process.platform === "darwin" && Boolean(getPendingZipPath());
     const result = await dialog.showMessageBox(mainWindow, {
       type: "info",
       buttons: ["Перезапустить сейчас", "Позже"],
@@ -551,7 +563,9 @@ function setupAutoUpdater() {
       cancelId: 1,
       title: "Обновление готово",
       message: `Версия ${version} загружена.`,
-      detail: "Перезапустите приложение, чтобы применить обновление."
+      detail: useManualMacInstall
+        ? "Приложение закроется и установит обновление в /Applications (без подписи Apple — это нормально для нашей сборки)."
+        : "Перезапустите приложение, чтобы применить обновление."
     });
     if (result.response === 0) applyPendingUpdate();
   });

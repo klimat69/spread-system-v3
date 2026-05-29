@@ -1,6 +1,6 @@
 {
   "name": "spread-system-v3-desktop",
-  "version": "3.1.7",
+  "version": "3.1.8",
   "private": true,
   "description": "Spread System v3 desktop wrapper",
   "main": "main.js",
@@ -14,15 +14,15 @@
     "verify:target:linux": "node ./scripts/verify-host-target.js linux",
     "build": "npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json",
     "build:win": "npm run verify:target:win && npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json --win",
-    "build:win:publish": "npm run verify:target:win && npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json --config ../installer/electron-builder.github.json --win --publish always",
+    "build:win:publish": "node ./scripts/publish-desktop.js win",
     "build:win:installer": "node ./scripts/build-win-installer.js",
     "build:mac": "npm run verify:target:mac && npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json --mac",
-    "build:mac:publish": "npm run verify:target:mac && npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json --config ../installer/electron-builder.github.json --mac --publish always",
+    "build:mac:publish": "node ./scripts/publish-desktop.js mac",
     "build:linux": "npm run verify:target:linux && npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json --linux"
   },
   "devDependencies": {
     "electron": "latest",
-    "electron-builder": "latest"
+    "electron-builder": "25.1.8"
   },
   "dependencies": {
     "electron-updater": "^4.0.0",
