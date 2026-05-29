@@ -4,6 +4,7 @@
  * Fails the release if artifacts do not match electron-updater expectations.
  */
 const { spawnSync } = require("child_process");
+const fs = require("fs");
 const path = require("path");
 
 const desktopDir = path.resolve(__dirname, "..");
@@ -43,10 +44,26 @@ run(
 run("node", ["./scripts/verify-update-artifacts.js", platform], "update artifact verify");
 
 const distDir = path.resolve(desktopDir, "../installer/dist");
-run(
-  "npx",
-  ["electron-builder", "publish", ...configs, `--path=${distDir}`],
-  `electron-builder publish ${platform}`
-);
+const publishFiles = fs
+  .readdirSync(distDir)
+  .filter((name) => {
+    if (platform === "mac") {
+      return (
+        name === "latest-mac.yml" ||
+        /^spread-system-v3-(x64|arm64)\.(zip|dmg|blockmap)$/.test(name)
+      );
+    }
+    return name === "latest.yml" || /^spread-system-v3-setup\.(exe|blockmap)$/.test(name);
+  })
+  .map((name) => path.join(distDir, name));
+if (!publishFiles.length) {
+  console.error("publish-desktop: no artifacts to publish in installer/dist");
+  process.exit(1);
+}
+const publishArgs = ["electron-builder", "publish", ...configs];
+for (const file of publishFiles) {
+  publishArgs.push("-f", file);
+}
+run("npx", publishArgs, `electron-builder publish ${platform}`);
 
 console.log(`publish-desktop: ${platform} published successfully`);
