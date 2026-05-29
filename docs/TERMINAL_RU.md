@@ -29,7 +29,7 @@
 Вам **не нужно** собирать `.dmg` / `.exe` локально.
 
 1. Изменения попадают в GitHub (ветка `main`).
-2. Создаётся тег версии, например `v3.1.8` (номер должен совпадать с версией в `desktop/package.json`).
+2. Создаётся тег версии, например `v3.1.12` (номер должен совпадать с версией в `desktop/package.json`).
 3. GitHub Actions **Desktop Release** собирает macOS и Windows и публикует файлы в [Releases](https://github.com/klimat69/spread-system-v3/releases).
 4. Установленное приложение раз в ~30 минут проверяет обновления и показывает: «Доступно обновление» → загрузка → «Перезапустить».
 
@@ -42,6 +42,8 @@
 Логи установщика:
 - macOS: `~/Library/Application Support/spread-system-v3-desktop/logs/updater.log` и `updater-install.log`
 - Windows: `%APPDATA%\spread-system-v3-desktop\logs\updater.log`
+
+**macOS:** в релизе два установщика — `spread-system-v3-x64.dmg` (Intel) и `spread-system-v3-arm64.dmg` (Apple Silicon). Автообновление качает zip под вашу архитектуру.
 
 **macOS:** приложение закрывается → распаковывает zip → заменяет **ту же** копию `.app`, откуда вы запустили (не всегда только `/Applications`).
 
