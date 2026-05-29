@@ -37,6 +37,16 @@
 
 Проверка вручную: в меню приложения или баннер «Обновление» вверху экрана.
 
+### Если обновление «зависло» на установке
+
+Логи установщика:
+- macOS: `~/Library/Application Support/spread-system-v3-desktop/logs/updater.log` и `updater-install.log`
+- Windows: `%APPDATA%\spread-system-v3-desktop\logs\updater.log`
+
+**macOS:** приложение закрывается → распаковывает zip → заменяет **ту же** копию `.app`, откуда вы запустили (не всегда только `/Applications`).
+
+**Windows:** приложение закрывает backend → запускает `spread-system-v3-setup.exe` из кэша → пройдите шаги мастера NSIS.
+
 ## Paper (демо)
 
 - API ключи **не нужны** для просмотра рынка и симуляции.

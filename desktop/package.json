@@ -1,6 +1,6 @@
 {
   "name": "spread-system-v3-desktop",
-  "version": "3.1.9",
+  "version": "3.1.10",
   "private": true,
   "description": "Spread System v3 desktop wrapper",
   "main": "main.js",
@@ -12,6 +12,7 @@
     "verify:target:mac": "node ./scripts/verify-host-target.js mac",
     "verify:target:win": "node ./scripts/verify-host-target.js win",
     "verify:target:linux": "node ./scripts/verify-host-target.js linux",
+    "test:updater-install": "node ./scripts/test-updater-install.js",
     "build": "npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json",
     "build:win": "npm run verify:target:win && npm run build:backend-runtime && npm run verify:backend-runtime && electron-builder --config ../installer/electron-builder.json --win",
     "build:win:publish": "node ./scripts/publish-desktop.js win",

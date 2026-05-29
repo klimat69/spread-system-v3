@@ -1,6 +1,10 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { spawn, spawnSync } = require("child_process");
 const fs = require("fs");
+const {
+  findPendingArtifact,
+  applyPendingUpdate: runPendingUpdate
+} = require("./updater-install");
 const http = require("http");
 const net = require("net");
 const path = require("path");
@@ -25,8 +29,7 @@ let updaterLogPath = null;
 let updaterInterval = null;
 let lastUpdateVersion = null;
 
-const MAC_APP_BUNDLE_NAME = "Spread System v3.app";
-const MAC_INSTALL_PATH = path.join("/Applications", MAC_APP_BUNDLE_NAME);
+let isInstallingUpdate = false;
 
 const isPackaged = app.isPackaged;
 const projectRoot = isPackaged ? process.resourcesPath : path.resolve(__dirname, "..");
@@ -355,79 +358,28 @@ function appendUpdaterLog(message) {
   }
 }
 
-function getUpdaterPendingDir() {
-  return path.join(userDataDir, "..", "Caches", "spread-system-v3-desktop-updater", "pending");
-}
-
 function getPendingZipPath() {
-  const pendingDir = getUpdaterPendingDir();
-  if (!fs.existsSync(pendingDir)) return null;
-  const zips = fs
-    .readdirSync(pendingDir)
-    .filter((name) => name.endsWith(".zip"))
-    .map((name) => path.join(pendingDir, name))
-    .filter((candidate) => fs.statSync(candidate).isFile());
-  if (!zips.length) return null;
-  zips.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  return zips[0];
+  return findPendingArtifact(userDataDir, ".zip");
 }
 
-function stopBackendForUpdate() {
-  if (!backendProcess) return;
-  try {
-    backendProcess.kill("SIGTERM");
-  } catch (_e) {
-    // Ignore kill errors during shutdown.
-  }
-  backendProcess = null;
-}
-
-function installPendingMacUpdate() {
-  const zipPath = getPendingZipPath();
-  if (!zipPath) {
-    return { ok: false, message: "Файл обновления не найден. Дождитесь загрузки до 100%." };
-  }
-
-  const extractDir = path.join(app.getPath("temp"), `spread-update-${Date.now()}`);
-  const scriptPath = path.join(app.getPath("temp"), `spread-install-${Date.now()}.sh`);
-  const parentPid = process.pid;
-  const script = `#!/bin/bash
-set -e
-sleep 1
-kill ${parentPid} 2>/dev/null || true
-pkill -f "spread-backend" 2>/dev/null || true
-sleep 1
-mkdir -p "${extractDir}"
-/usr/bin/unzip -oq "${zipPath}" -d "${extractDir}"
-test -d "${extractDir}/${MAC_APP_BUNDLE_NAME}"
-rm -rf "${MAC_INSTALL_PATH}"
-/usr/bin/ditto "${extractDir}/${MAC_APP_BUNDLE_NAME}" "${MAC_INSTALL_PATH}"
-xattr -cr "${MAC_INSTALL_PATH}" 2>/dev/null || true
-/usr/bin/open "${MAC_INSTALL_PATH}"
-rm -rf "${extractDir}"
-rm -f "${scriptPath}"
-`;
-
-  fs.writeFileSync(scriptPath, script, { mode: 0o755 });
-  appendUpdaterLog(`Manual macOS install started from ${zipPath}`);
-  stopBackendForUpdate();
-  const child = spawn("/bin/bash", [scriptPath], { detached: true, stdio: "ignore" });
-  child.unref();
-  setTimeout(() => app.quit(), 300);
-  return { ok: true, message: "Установка запущена. Приложение перезапустится через несколько секунд." };
+function getPendingWindowsInstallerPath() {
+  return findPendingArtifact(userDataDir, ".exe");
 }
 
 function applyPendingUpdate() {
-  if (!isPackaged || !autoUpdater) {
-    return { ok: false, message: "Установка обновления недоступна в dev-режиме." };
-  }
-  if (process.platform === "darwin" && getPendingZipPath()) {
-    return installPendingMacUpdate();
-  }
-  appendUpdaterLog("Applying update via quitAndInstall");
-  stopBackendForUpdate();
-  autoUpdater.quitAndInstall(false, true);
-  return { ok: true };
+  isInstallingUpdate = true;
+  return runPendingUpdate({
+    app,
+    isPackaged,
+    autoUpdater,
+    userDataDir,
+    updaterLogPath,
+    backendProcess,
+    onQuit: () => {
+      backendProcess = null;
+      app.quit();
+    }
+  });
 }
 
 function notifyRendererUpdater(payload) {
@@ -456,6 +408,11 @@ function isUpdaterNoFilesError(message) {
   return message.includes("No files provided");
 }
 
+function isUpdaterAccessError(message) {
+  const lower = message.toLowerCase();
+  return lower.includes("access is denied") || lower.includes("eacces") || lower.includes("eperm");
+}
+
 const RELEASES_PAGE_URL = "https://github.com/klimat69/spread-system-v3/releases/latest";
 
 function setupAutoUpdater() {
@@ -466,9 +423,7 @@ function setupAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
-  if (process.platform === "darwin") {
-    autoUpdater.disableDifferentialDownload = true;
-  }
+  autoUpdater.disableDifferentialDownload = true;
 
   autoUpdater.on("checking-for-update", () => {
     appendUpdaterLog("Checking for updates...");
@@ -528,7 +483,19 @@ function setupAutoUpdater() {
       notifyRendererUpdater({
         state: "error",
         message:
-          "Автообновление не нашло подходящий файл для вашего Mac. Скачайте spread-system-v3.dmg с GitHub Releases и установите вручную."
+          "Автообновление не нашло подходящий файл. Скачайте установщик с GitHub Releases (раздел v" +
+            (lastUpdateVersion || "latest") +
+            ")."
+      });
+      return;
+    }
+    if (isUpdaterAccessError(message)) {
+      notifyRendererUpdater({
+        state: "error",
+        message:
+          process.platform === "win32"
+            ? "Нет прав на установку. Закройте все копии приложения и запустите от имени администратора, либо скачайте setup.exe с GitHub."
+            : "Нет прав на замену приложения. Переместите Spread System v3 в /Applications и повторите, либо скачайте .dmg с GitHub."
       });
       return;
     }
@@ -545,7 +512,9 @@ function setupAutoUpdater() {
   });
   autoUpdater.on("update-downloaded", async (info) => {
     const version = info?.version || "новая";
-    appendUpdaterLog(`Update downloaded: ${version} pendingZip=${getPendingZipPath() || "none"}`);
+    appendUpdaterLog(
+      `Update downloaded: ${version} pendingZip=${getPendingZipPath() || "none"} pendingExe=${getPendingWindowsInstallerPath() || "none"}`
+    );
     notifyRendererUpdater({
       state: "ready",
       version,
@@ -556,6 +525,7 @@ function setupAutoUpdater() {
       return;
     }
     const useManualMacInstall = process.platform === "darwin" && Boolean(getPendingZipPath());
+    const useWindowsInstaller = process.platform === "win32" && Boolean(getPendingWindowsInstallerPath());
     const result = await dialog.showMessageBox(mainWindow, {
       type: "info",
       buttons: ["Перезапустить сейчас", "Позже"],
@@ -564,8 +534,10 @@ function setupAutoUpdater() {
       title: "Обновление готово",
       message: `Версия ${version} загружена.`,
       detail: useManualMacInstall
-        ? "Приложение закроется и установит обновление в /Applications (без подписи Apple — это нормально для нашей сборки)."
-        : "Перезапустите приложение, чтобы применить обновление."
+        ? "Приложение закроется, заменит текущую копию и откроется снова (сборка без подписи Apple — это нормально)."
+        : useWindowsInstaller
+          ? "Приложение закроется и запустит установщик. Подтвердите шаги мастера установки."
+          : "Перезапустите приложение, чтобы применить обновление."
     });
     if (result.response === 0) applyPendingUpdate();
   });
@@ -742,7 +714,14 @@ ipcMain.handle("updater-check-now", async () => {
   }
 });
 
-ipcMain.handle("updater-install-now", async () => applyPendingUpdate());
+ipcMain.handle("updater-install-now", async () => {
+  const result = applyPendingUpdate();
+  if (!result.ok) {
+    isInstallingUpdate = false;
+    appendUpdaterLog(`Install rejected: ${result.message}`);
+  }
+  return result;
+});
 
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => {
@@ -755,6 +734,9 @@ app.on("before-quit", () => {
   if (updaterInterval) {
     clearInterval(updaterInterval);
     updaterInterval = null;
+  }
+  if (isInstallingUpdate) {
+    return;
   }
   if (backendProcess) {
     backendProcess.kill();
