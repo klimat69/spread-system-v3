@@ -444,6 +444,12 @@ function isUpdaterConfigError(message) {
   );
 }
 
+function isUpdaterNoFilesError(message) {
+  return message.includes("No files provided");
+}
+
+const RELEASES_PAGE_URL = "https://github.com/klimat69/spread-system-v3/releases/latest";
+
 function setupAutoUpdater() {
   if (!canUseAutoUpdater()) {
     appendUpdaterLog("Auto-update skipped: app-update.yml is not bundled in this build.");
@@ -504,6 +510,14 @@ function setupAutoUpdater() {
         state: "ready",
         version: lastUpdateVersion || undefined,
         message: "Обновление загружено. Нажмите «Перезапустить» для установки."
+      });
+      return;
+    }
+    if (isUpdaterNoFilesError(message)) {
+      notifyRendererUpdater({
+        state: "error",
+        message:
+          "Автообновление не нашло подходящий файл для вашего Mac. Скачайте spread-system-v3.dmg с GitHub Releases и установите вручную."
       });
       return;
     }
