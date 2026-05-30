@@ -71,13 +71,16 @@ export const ru = {
   paperClosed: "закрыто",
   paperWins: "в плюс",
   paperLosses: "в минус",
+  paperBreakeven: "без изменений",
   paperOpen: "открыта",
   paperColTime: "Время",
   paperColSide: "Сторона",
   paperColEntry: "Вход",
   paperColExit: "Выход",
   paperColPnl: "P/L",
-  botChartLegend: "На графике выше: ▲ buy · ▼ sell (яркие — вход, бледные — выход)",
+  botChartLegend: "На графике: ▲ buy · ▼ sell (яркие — вход, бледные — выход). Один круглый оборот = 2 маркера.",
+  paperStatsHint: "Счётчики и таблица — одни и те же сделки текущей пары; прокрутите список. Маркеров на графике ≈ в 2 раза больше.",
+  paperTableCount: "В таблице сделок",
   botMetricsHint: "Линия — mid стакана MEXC; маркеры — входы и выходы бота (Paper).",
   feedOk: "OK",
   feedUnhealthy: "Проблема",
@@ -155,7 +158,8 @@ const blockedReasonLabels: Record<string, string> = {
   resistance_wall_blocks_long: "стена продавцов мешает покупке",
   support_wall_blocks_short: "стена покупателей мешает продаже",
   reconciliation_blocked: "блокировка сверки",
-  max_open_orders_reached: "слишком много открытых ордеров"
+  max_open_orders_reached: "слишком много открытых ордеров",
+  paper_book_unstable: "стакан нестабилен — вход пропущен (слишком широкий спред)"
 };
 
 export function blockedReasonRu(reason: string | null | undefined): string {

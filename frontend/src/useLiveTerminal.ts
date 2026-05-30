@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
 import { api, liveWsUrl } from "./api";
+import { applyDryRunSnapshot } from "./paperAnalytics";
 import type { BotStatus, DomDelta, DryRunOrder, LiveMessage, MarketState, SymbolListResponse, TapeTrade } from "./types";
+
+function dryRunOrdersFromPayload(message: LiveMessage): DryRunOrder[] | null {
+  if (message.type === "dry_run" && Array.isArray(message.orders)) {
+    return message.orders as DryRunOrder[];
+  }
+  const fromStatus = (message.status as BotStatus & { dry_run_orders?: DryRunOrder[] } | undefined)?.dry_run_orders;
+  if (Array.isArray(fromStatus)) return fromStatus;
+  if (Array.isArray(message.dry_run_orders)) return message.dry_run_orders;
+  return null;
+}
 
 function emptyStatus(): BotStatus {
   return {
@@ -50,6 +61,8 @@ export function useLiveTerminal() {
         try {
           const message = JSON.parse(event.data) as LiveMessage;
           if (message.status) setStatus(message.status);
+          const dryRunBatch = dryRunOrdersFromPayload(message);
+          if (dryRunBatch !== null) setDryRunOrders((prev) => applyDryRunSnapshot(prev, dryRunBatch));
           if (message.type === "market" && message.state) {
             setMarket(message.state);
             setWsHealth(message.state.ws_status);
@@ -73,10 +86,9 @@ export function useLiveTerminal() {
               if (snapshotHealth?.status) setWsHealth(String(snapshotHealth.status));
               if (snapshotHealth?.reason) setWsReason(String(snapshotHealth.reason));
             }
-            if (Array.isArray(message.dry_run_orders)) setDryRunOrders(message.dry_run_orders);
-          }
-          if (message.type === "dry_run" && Array.isArray(message.orders as DryRunOrder[] | undefined)) {
-            setDryRunOrders((message.orders as DryRunOrder[]).slice(-100));
+            if (Array.isArray(message.dry_run_orders)) {
+              setDryRunOrders((prev) => applyDryRunSnapshot(prev, message.dry_run_orders!));
+            }
           }
           if (message.message) setError(message.message);
         } catch (err) {
@@ -99,6 +111,29 @@ export function useLiveTerminal() {
     return () => {
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       socket?.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const syncPaperOrders = async () => {
+      try {
+        const nextStatus = await api.status();
+        if (cancelled) return;
+        setStatus(nextStatus);
+        if (Array.isArray(nextStatus.dry_run_orders)) {
+          setDryRunOrders((prev) => applyDryRunSnapshot(prev, nextStatus.dry_run_orders!));
+        }
+      } catch {
+        // WS is primary; REST resync is best-effort.
+      }
+    };
+
+    void syncPaperOrders();
+    const timer = window.setInterval(syncPaperOrders, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
     };
   }, []);
 

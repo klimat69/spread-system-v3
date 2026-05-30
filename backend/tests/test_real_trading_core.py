@@ -212,3 +212,22 @@ async def test_swap_missing_exchange_position_is_ok_when_local_position_is_flat(
     result = await ReconciliationService(repo, Adapter(), PositionLedger(repo)).sync(config)  # type: ignore[arg-type]
 
     assert result["blocking"] is False
+
+
+def test_paper_exit_price_closes_at_correct_book_side():
+    from app.engine import paper_exit_price
+
+    bid, ask = 99.5, 100.5
+    assert paper_exit_price("buy", bid, ask) == bid
+    assert paper_exit_price("sell", bid, ask) == ask
+
+
+def test_paper_book_sane_rejects_wide_spread():
+    from app.engine import paper_book_sane
+    from app.market_state import MarketState
+
+    ok = MarketState(best_bid=100.0, best_ask=100.2)
+    assert paper_book_sane(ok) is True
+
+    bad = MarketState(best_bid=71208.0, best_ask=73410.0)
+    assert paper_book_sane(bad) is False

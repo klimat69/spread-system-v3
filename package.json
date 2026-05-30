@@ -1,6 +1,6 @@
 {
   "name": "spread-system-v3",
-  "version": "3.1.17",
+  "version": "3.1.18",
   "private": true,
   "description": "Production-grade spread trading system with FastAPI, React, SQLite, WebSockets, and Electron.",
   "scripts": {
@@ -20,6 +20,7 @@
     "release:mac:publish": "npm run build:frontend && npm run build:mac:publish",
     "release:linux": "npm run build:frontend && npm run build:linux",
     "dev:frontend": "npm --prefix frontend run dev",
-    "dev:desktop": "npm --prefix desktop run dev"
+    "dev:desktop": "npm --prefix desktop run dev",
+    "docs:pdf": "python3 docs/generate_user_guide_pdf.py"
   }
 }

@@ -91,5 +91,33 @@ export function sessionPaperStats(rows: PaperTradeRow[]) {
   const totalPnl = closed.reduce((sum, row) => sum + (row.pnl ?? 0), 0);
   const wins = closed.filter((row) => (row.pnl ?? 0) > 0).length;
   const losses = closed.filter((row) => (row.pnl ?? 0) < 0).length;
-  return { totalPnl, wins, losses, closedCount: closed.length, openCount: rows.filter((row) => row.status === "open").length };
+  const breakeven = closed.filter((row) => (row.pnl ?? 0) === 0).length;
+  return {
+    totalPnl,
+    wins,
+    losses,
+    breakeven,
+    closedCount: closed.length,
+    openCount: rows.filter((row) => row.status === "open").length
+  };
+}
+
+/** Backend always sends a full snapshot (last 100); replace local state with it. */
+export function applyDryRunSnapshot(_existing: DryRunOrder[], incoming: DryRunOrder[]): DryRunOrder[] {
+  return incoming.slice(-100);
+}
+
+/** Keep paper rows for the active trading pair only (ignores stale orders from other symbols). */
+export function filterDryRunOrdersForPair(
+  orders: DryRunOrder[],
+  symbol: string,
+  marketType: string
+): DryRunOrder[] {
+  const tagged = orders.filter((order) => order.symbol);
+  const pool = tagged.length > 0 ? tagged : orders;
+  return pool.filter(
+    (order) =>
+      !order.symbol ||
+      (order.symbol === symbol && (!order.market_type || order.market_type === marketType))
+  );
 }

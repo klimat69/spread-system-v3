@@ -33,9 +33,11 @@ export function PaperAnalyticsPanel({ orders, mode }: { orders: DryRunOrder[]; m
         </span>
         <span>
           {ru.paperClosed}: {stats.closedCount} · {ru.paperWins}: {stats.wins} · {ru.paperLosses}: {stats.losses}
+          {stats.breakeven > 0 ? ` · ${ru.paperBreakeven}: ${stats.breakeven}` : ""}
           {stats.openCount > 0 ? ` · ${ru.paperOpen}: ${stats.openCount}` : ""}
         </span>
       </div>
+      <p className="hint">{ru.paperStatsHint}</p>
       {rows.length === 0 ? (
         <p className="hint">{ru.noPaperTrades}</p>
       ) : (
@@ -51,7 +53,7 @@ export function PaperAnalyticsPanel({ orders, mode }: { orders: DryRunOrder[]; m
               </tr>
             </thead>
             <tbody>
-              {rows.slice(0, 20).map((row) => (
+              {rows.map((row) => (
                 <tr key={row.id}>
                   <td>{formatTime(row.openedAt)}</td>
                   <td className={row.side === "buy" ? "side-buy" : "side-sell"}>{row.side.toUpperCase()}</td>
@@ -73,6 +75,12 @@ export function PaperAnalyticsPanel({ orders, mode }: { orders: DryRunOrder[]; m
           </table>
         </div>
       )}
+      {rows.length > 0 ? (
+        <p className="hint">
+          {ru.paperTableCount}: {rows.length}
+          {stats.closedCount > 0 ? ` (${ru.paperLosses}: ${stats.losses})` : ""}
+        </p>
+      ) : null}
       <p className="chart-legend-hint">{ru.botChartLegend}</p>
     </section>
   );

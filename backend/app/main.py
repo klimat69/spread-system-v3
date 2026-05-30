@@ -249,6 +249,8 @@ async def save_config(config: AppConfig) -> dict:
         saved = config_service.save(config)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
+    if trading_engine.running:
+        await market_data_engine.ensure_started(saved)
     trade_repository.insert_event("info", "Config saved and applied")
     await manager.broadcast({"type": "config", "config": saved.model_dump()})
     return saved.model_dump()

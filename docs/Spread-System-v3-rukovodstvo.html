@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Spread System v3 — руководство</title>
+  <style>
+    @page { margin: 18mm; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 11pt;
+      line-height: 1.45;
+      color: #0f172a;
+      max-width: 180mm;
+      margin: 0 auto;
+      padding: 12mm;
+    }
+    h1 { color: #2563eb; font-size: 22pt; margin: 0 0 4pt; }
+    h2 { color: #1e293b; font-size: 14pt; margin: 18pt 0 8pt; border-bottom: 1px solid #cbd5e1; padding-bottom: 4pt; }
+    h3 { font-size: 11.5pt; margin: 12pt 0 6pt; color: #334155; }
+    .subtitle { color: #64748b; font-size: 11pt; margin-bottom: 16pt; }
+    ul { margin: 6pt 0; padding-left: 20pt; }
+    li { margin: 4pt 0; }
+    p { margin: 6pt 0; }
+    table { width: 100%; border-collapse: collapse; margin: 10pt 0; font-size: 10pt; }
+    th, td { border: 1px solid #cbd5e1; padding: 6pt 8pt; text-align: left; }
+    th { background: #f1f5f9; }
+    .highlight {
+      background: #eff6ff;
+      border-left: 4px solid #2563eb;
+      padding: 10pt 12pt;
+      margin: 14pt 0;
+      font-weight: 600;
+      color: #1e40af;
+    }
+    .footer { margin-top: 24pt; font-size: 9pt; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <h1>Spread System v3</h1>
+  <p class="subtitle">Краткое руководство пользователя · версия 3.1.18</p>
+
+  <h2>Что это за программа</h2>
+  <p>
+    Программа смотрит на биржу MEXC в реальном времени: <strong>стакан</strong> (кто хочет купить и продать)
+    и <strong>ленту</strong> (кто уже торгует). Когда картина «сходится», в режиме <strong>Paper</strong>
+    она записывает виртуальную сделку — <em>без ордеров на бирже и без риска для денег на счёте</em>.
+  </p>
+
+  <h2>Экран — что где</h2>
+  <ul>
+    <li><strong>Слева</strong> — выбор пары (спот или фьючерсы, например BTC).</li>
+    <li><strong>По центру сверху</strong> — живая линия цены; в Paper — треугольники входа (яркие) и выхода (бледные).</li>
+    <li><strong>По центру снизу</strong> — график TradingView только для обзора; бот им <strong>не торгует</strong>.</li>
+    <li><strong>Справа</strong> — стакан, лента и таблица «Аналитика Paper» с P/L.</li>
+    <li><strong>Вверху</strong> — Старт, Автоторговля, статус Поток (OK / Проблема).</li>
+  </ul>
+
+  <h2>Paper и Live</h2>
+  <table>
+    <tr><th>Режим</th><th>Смысл</th></tr>
+    <tr><td><strong>Paper</strong></td><td>Учебная симуляция на реальных ценах. API-ключи не нужны.</td></tr>
+    <tr><td><strong>Live</strong></td><td>Настоящие ордера. Нужны ключи API и блок «Риск».</td></tr>
+  </table>
+
+  <h2>Как включить бота</h2>
+  <ol>
+    <li>Выбрать пару → <strong>Сохранить конфиг</strong>.</li>
+    <li>Нажать <strong>Старт</strong>.</li>
+    <li>Включить <strong>Автоторговля</strong>.</li>
+    <li>Дождаться <strong>«Поток: OK»</strong> и цен bid/ask ≠ 0.</li>
+    <li>Смотреть график и «Аналитика Paper» справа.</li>
+  </ol>
+  <p>
+    <strong>Мягкие сигналы (демо)</strong> — если сделок долго нет: разрешает торговать чуть раньше, пока лента прогревается.
+  </p>
+
+  <h2>На чём основаны сигналы (блок «Скальп»)</h2>
+  <p>Чем <strong>выше</strong> пороги — тем <strong>реже</strong> сделки. Чем <strong>ниже</strong> — тем чаще, но больше шума.</p>
+  <ul>
+    <li><strong>Мин. спред</strong> — насколько разошлись цена покупки и продажи.</li>
+    <li><strong>Мин. дисбаланс</strong> — перевес объёма в стакане в одну сторону.</li>
+    <li><strong>Мин. агрессия ленты</strong> — в ленте видно, кто активно бьёт по рынку.</li>
+  </ul>
+  <p><strong>Вход:</strong> все три условия совпали → открывается виртуальная позиция (buy или sell).</p>
+  <p><strong>Выход:</strong> сигнал пропал или сменилась сторона → позиция закрывается.</p>
+
+  <h2>«Стратегия» и «Риск»</h2>
+  <ul>
+    <li>Для <strong>Paper</strong> главная ручка — блок <strong>«Скальп»</strong>.</li>
+    <li>Поля «Стратегия» (удержание, пауза и т.д.) на симуляцию <strong>почти не влияют</strong>.</li>
+    <li>«Устаревание стакана» влияет на статус <strong>Поток</strong>, не на формулу входа.</li>
+    <li><strong>«Риск»</strong> работает в Live; в Paper лимиты не режут сделки.</li>
+  </ul>
+
+  <h2>Как считается P/L в Paper</h2>
+  <ul>
+    <li>Это учебная математика, не реальный счёт MEXC.</li>
+    <li>Long (buy): вход и выход с учётом стороны стакана при закрытии.</li>
+    <li>P/L = разница цен × <strong>размер ордера</strong> из настроек.</li>
+  </ul>
+
+  <h2>Три шаблона BTC/USDT (фьючерс, Paper)</h2>
+  <p>Режим Paper, фьючерсы, пара <code>BTC/USDT:USDT</code>. После правок — Сохранить, Старт, Автоторговля.</p>
+  <table>
+    <tr><th>Шаблон</th><th>Спред</th><th>Дисбаланс</th><th>Агрессия</th><th>Мягкие сигналы</th></tr>
+    <tr><td>1. Спокойный</td><td>0.00028</td><td>0.26</td><td>0.22</td><td>выкл</td></tr>
+    <tr><td>2. Базовый</td><td>0.0002</td><td>0.2</td><td>0.15</td><td>выкл</td></tr>
+    <tr><td>3. Активный</td><td>0.00012</td><td>0.12</td><td>0.08</td><td><strong>вкл</strong></td></tr>
+  </table>
+
+  <h2>Установка на Mac</h2>
+  <ul>
+    <li><strong>Intel Mac:</strong> <code>Spread-System-v3-3.1.18-Intel-Mac.dmg</code> на рабочем столе.</li>
+    <li><strong>M1/M2/M3:</strong> нужна сборка Apple Silicon (arm64), не Intel.</li>
+    <li>Открыть DMG → «Программы». При блокировке: ПКМ → «Открыть».</li>
+  </ul>
+
+  <h2>Частые вопросы</h2>
+  <ul>
+    <li><strong>Нет сделок</strong> — нет Старт/Автоторговля, Поток не OK, или пороги «Скальп» слишком жёсткие.</li>
+    <li><strong>TV и mid не совпадают</strong> — TradingView с задержкой; бот смотрит свой поток MEXC.</li>
+    <li><strong>На бирже пусто</strong> — в Paper это нормально, это только симуляция.</li>
+    <li><strong>Поток: Проблема</strong> — подождать 15–30 с, сохранить конфиг, проверить пару.</li>
+  </ul>
+
+  <p class="highlight">
+    Одной фразой: программа слушает MEXC; при согласии стакана и ленты записывает виртуальную сделку
+    и показывает вход, выход и P/L — без ордеров на бирже.
+  </p>
+
+  <p class="footer">
+    Логи: ~/Library/Application Support/spread-system-v3-desktop/logs/backend.log ·
+    Подробнее: docs/TERMINAL_RU.md в репозитории
+  </p>
+</body>
+</html>

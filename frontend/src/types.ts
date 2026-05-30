@@ -66,6 +66,7 @@ export interface BotStatus {
   volatility: number;
   imbalance: number;
   blocked_reason: string | null;
+  dry_run_orders?: DryRunOrder[];
 }
 
 export interface Trade {
@@ -257,6 +258,8 @@ export interface TapeTrade {
 export interface DryRunOrder {
   id: string;
   timestamp: string;
+  symbol?: string;
+  market_type?: string;
   side: "buy" | "sell";
   price: number;
   size: number;

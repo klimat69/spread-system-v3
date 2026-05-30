@@ -195,7 +195,7 @@ select:focus {
 }
 
 .paper-table-wrap {
-  max-height: 220px;
+  max-height: 360px;
   overflow: auto;
   border: 1px solid #22314f;
   border-radius: 10px;

@@ -3,7 +3,7 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import { api } from "./api";
 import { BotMidChart } from "./BotMidChart";
 import { PaperAnalyticsPanel } from "./PaperAnalyticsPanel";
-import { buildChartMarkers } from "./paperAnalytics";
+import { buildChartMarkers, filterDryRunOrdersForPair } from "./paperAnalytics";
 import type { MidTick } from "./streamCandles";
 import {
   type ChartInterval,
@@ -79,7 +79,14 @@ export default function App() {
   const restSymbols = orderedSymbols.filter((s) => !popularSymbols.includes(s)).slice(0, 200);
 
   const pairNote = config ? symbolNote(config.trading.symbol, symbolCatalog) : "";
-  const tradeMarkers = useMemo(() => buildChartMarkers(dryRunOrders), [dryRunOrders]);
+  const paperOrders = useMemo(
+    () =>
+      config
+        ? filterDryRunOrdersForPair(dryRunOrders, config.trading.symbol, config.trading.market_type)
+        : dryRunOrders,
+    [dryRunOrders, config?.trading.symbol, config?.trading.market_type]
+  );
+  const tradeMarkers = useMemo(() => buildChartMarkers(paperOrders), [paperOrders]);
 
   useEffect(() => {
     const desktop = window.spreadSystemDesktop;
@@ -821,7 +828,7 @@ export default function App() {
         </section>
 
         <aside className="right-panel panel">
-          <PaperAnalyticsPanel orders={dryRunOrders} mode={config.trading.mode} />
+          <PaperAnalyticsPanel orders={paperOrders} mode={config.trading.mode} />
           <h3>{ru.orderBook}</h3>
           <div className="book">
             <div className="book-side">

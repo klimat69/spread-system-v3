@@ -19,6 +19,21 @@ from .websocket import manager
 logger = logging.getLogger(__name__)
 
 
+def paper_exit_price(position_side: str, best_bid: float, best_ask: float) -> float:
+    """Paper close: sell long at bid, buy back short at ask."""
+    return best_bid if position_side == "buy" else best_ask
+
+
+def paper_book_sane(state: MarketState, max_relative_spread: float = 0.012) -> bool:
+    """Reject paper entries on corrupted book ticks (e.g. bid/ask from different snapshots)."""
+    if state.best_bid <= 0 or state.best_ask <= 0 or state.best_ask <= state.best_bid:
+        return False
+    mid = (state.best_bid + state.best_ask) / 2
+    if mid <= 0:
+        return False
+    return (state.best_ask - state.best_bid) / mid <= max_relative_spread
+
+
 class TradingEngine:
     def __init__(self) -> None:
         self.strategy = SimpleScalpEngine()
@@ -34,6 +49,8 @@ class TradingEngine:
         self._last_metrics: dict = {}
         self._blocked_reason: str | None = None
         self._dry_run_orders: list[dict] = []
+        self._dry_run_seq = 0
+        self._dry_run_session: tuple[str, str, str] | None = None
         self._last_market_broadcast_ns: int = 0
         self._last_status_broadcast_ns: int = 0
 
@@ -72,16 +89,20 @@ class TradingEngine:
             "auto_trade_enabled": config.trading.auto_trade_enabled,
             "use_realtime_dom_engine": config.trading.use_realtime_dom_engine,
             "active_order": self.order_manager.active.local_order_id if self.order_manager.active else None,
-            "dry_run_orders": self._dry_run_orders[-20:],
+            "dry_run_orders": self._dry_run_orders_snapshot(),
             **self._last_metrics,
             **self.risk.status(),
         }
 
     async def start(self) -> dict:
-        if self._running:
-            return self.status()
         config = config_service.load()
+        session = (config.exchange.name, config.trading.market_type, config.trading.symbol)
+        if self._dry_run_session != session:
+            self._reset_paper_session(session)
         await market_data_engine.ensure_started(config)
+        if self._running:
+            await manager.broadcast({"type": "status", "status": self.status()})
+            return self.status()
         self._running = True
         if not self._subscribed:
             market_data_engine.subscribe_orderbook_updates(self._on_market_event)
@@ -199,12 +220,37 @@ class TradingEngine:
             await self.order_manager.place_limit(config, decision.signal, price, config.trading.order_size)
             await manager.broadcast({"type": "orders", "orders": trade_repository.list_orders(limit=30)})
 
+    def _reset_paper_session(self, session: tuple[str, str, str]) -> None:
+        self._dry_run_orders = []
+        self._dry_run_seq = 0
+        self._dry_run_session = session
+        self.strategy = SimpleScalpEngine()
+
+    def _dry_run_orders_snapshot(self) -> list[dict]:
+        return [dict(order) for order in self._dry_run_orders[-100:]]
+
+    def _next_dry_run_id(self) -> str:
+        self._dry_run_seq += 1
+        return f"dry-{self._dry_run_seq}-{int(time.time() * 1000)}"
+
+    async def _broadcast_dry_run(self) -> None:
+        await manager.broadcast({"type": "dry_run", "orders": self._dry_run_orders_snapshot()})
+
     async def _handle_dry_run(self, state: MarketState, decision, config) -> None:
+        session = (config.exchange.name, config.trading.market_type, config.trading.symbol)
+        if self._dry_run_session != session:
+            self._reset_paper_session(session)
+
         if decision.should_enter and decision.signal in {"buy", "sell"}:
+            if not paper_book_sane(state):
+                self._blocked_reason = "paper_book_unstable"
+                return
             price = state.best_bid if decision.signal == "buy" else state.best_ask
             event = {
-                "id": f"dry-{int(time.time() * 1000)}",
+                "id": self._next_dry_run_id(),
                 "timestamp": datetime.now(UTC).isoformat(),
+                "symbol": config.trading.symbol,
+                "market_type": config.trading.market_type,
                 "side": decision.signal,
                 "price": price,
                 "size": config.trading.order_size,
@@ -213,17 +259,17 @@ class TradingEngine:
             }
             self._dry_run_orders.append(event)
             self._dry_run_orders = self._dry_run_orders[-100:]
-            await manager.broadcast({"type": "dry_run", "event": event, "orders": self._dry_run_orders[-30:]})
+            await self._broadcast_dry_run()
         elif decision.should_exit and self._dry_run_orders:
             latest = self._dry_run_orders[-1]
             if latest.get("status") != "OPEN":
                 return
-            exit_price = state.best_ask if latest["side"] == "buy" else state.best_bid
+            exit_price = paper_exit_price(latest["side"], state.best_bid, state.best_ask)
             latest["status"] = "CLOSED"
             latest["closed_at"] = datetime.now(UTC).isoformat()
             latest["exit_price"] = exit_price
             latest["exit_reason"] = decision.reason
-            await manager.broadcast({"type": "dry_run", "event": latest, "orders": self._dry_run_orders[-30:]})
+            await self._broadcast_dry_run()
 
     def _state_from_payload(self, payload: dict) -> MarketState:
         state = MarketState()
