@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "./api";
-import { BotMidChart } from "./BotMidChart";
+import { LiveAnalyticsPanel } from "./LiveAnalyticsPanel";
 import { PaperAnalyticsPanel } from "./PaperAnalyticsPanel";
+import { DecimalConfigInput } from "./DecimalConfigInput";
+import { BotMidChart } from "./BotMidChart";
 import { buildChartMarkers, filterDryRunOrdersForPair } from "./paperAnalytics";
+import { filterBotFillsForPair, filterBotOrdersForPair } from "./liveAnalytics";
 import type { MidTick } from "./streamCandles";
 import {
   type ChartInterval,
@@ -48,6 +51,8 @@ export default function App() {
     status,
     market,
     dryRunOrders,
+    liveOrders,
+    liveFills,
     wsConnected,
     wsHealth,
     wsReason,
@@ -87,6 +92,30 @@ export default function App() {
     [dryRunOrders, config?.trading.symbol, config?.trading.market_type]
   );
   const tradeMarkers = useMemo(() => buildChartMarkers(paperOrders), [paperOrders]);
+  const botOrders = useMemo(
+    () =>
+      config
+        ? filterBotOrdersForPair(
+            liveOrders,
+            config.trading.symbol,
+            config.trading.market_type,
+            config.exchange.name
+          )
+        : liveOrders,
+    [liveOrders, config?.trading.symbol, config?.trading.market_type, config?.exchange.name]
+  );
+  const botFills = useMemo(
+    () =>
+      config
+        ? filterBotFillsForPair(
+            liveFills,
+            config.trading.symbol,
+            config.trading.market_type,
+            config.exchange.name
+          )
+        : liveFills,
+    [liveFills, config?.trading.symbol, config?.trading.market_type, config?.exchange.name]
+  );
 
   useEffect(() => {
     const desktop = window.spreadSystemDesktop;
@@ -535,88 +564,60 @@ export default function App() {
             <div className="settings">
               <label>
                 {ru.spreadMin}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={String(config.simple_scalp?.spread_min ?? 0.0002)}
-                  onChange={(e) =>
+                <DecimalConfigInput
+                  value={config.simple_scalp?.spread_min ?? 0.0002}
+                  onChange={(spread_min) =>
                     setConfig({
                       ...config,
-                      simple_scalp: {
-                        ...config.simple_scalp!,
-                        spread_min: parseLocaleNumber(e.target.value, config.simple_scalp?.spread_min ?? 0.0002)
-                      }
+                      simple_scalp: { ...config.simple_scalp!, spread_min }
                     })
                   }
                 />
               </label>
               <label>
                 {ru.imbalanceMin}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={String(config.simple_scalp?.imbalance_min ?? 0.2)}
-                  onChange={(e) =>
+                <DecimalConfigInput
+                  value={config.simple_scalp?.imbalance_min ?? 0.2}
+                  onChange={(imbalance_min) =>
                     setConfig({
                       ...config,
-                      simple_scalp: {
-                        ...config.simple_scalp!,
-                        imbalance_min: parseLocaleNumber(e.target.value, config.simple_scalp?.imbalance_min ?? 0.2)
-                      }
+                      simple_scalp: { ...config.simple_scalp!, imbalance_min }
                     })
                   }
                 />
               </label>
               <label>
                 {ru.aggressionMin}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={String(config.simple_scalp?.aggression_min ?? 0.15)}
-                  onChange={(e) =>
+                <DecimalConfigInput
+                  value={config.simple_scalp?.aggression_min ?? 0.15}
+                  onChange={(aggression_min) =>
                     setConfig({
                       ...config,
-                      simple_scalp: {
-                        ...config.simple_scalp!,
-                        aggression_min: parseLocaleNumber(e.target.value, config.simple_scalp?.aggression_min ?? 0.15)
-                      }
+                      simple_scalp: { ...config.simple_scalp!, aggression_min }
                     })
                   }
                 />
               </label>
               <label>
                 {ru.staleOrderSec}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={String(config.simple_scalp?.stale_order_after_seconds ?? 1.5)}
-                  onChange={(e) =>
+                <DecimalConfigInput
+                  value={config.simple_scalp?.stale_order_after_seconds ?? 1.5}
+                  onChange={(stale_order_after_seconds) =>
                     setConfig({
                       ...config,
-                      simple_scalp: {
-                        ...config.simple_scalp!,
-                        stale_order_after_seconds: parseLocaleNumber(
-                          e.target.value,
-                          config.simple_scalp?.stale_order_after_seconds ?? 1.5
-                        )
-                      }
+                      simple_scalp: { ...config.simple_scalp!, stale_order_after_seconds }
                     })
                   }
                 />
               </label>
               <label>
                 {ru.replaceMoveBps}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={String(config.simple_scalp?.replace_move_bps ?? 3)}
-                  onChange={(e) =>
+                <DecimalConfigInput
+                  value={config.simple_scalp?.replace_move_bps ?? 3}
+                  onChange={(replace_move_bps) =>
                     setConfig({
                       ...config,
-                      simple_scalp: {
-                        ...config.simple_scalp!,
-                        replace_move_bps: parseLocaleNumber(e.target.value, config.simple_scalp?.replace_move_bps ?? 3)
-                      }
+                      simple_scalp: { ...config.simple_scalp!, replace_move_bps }
                     })
                   }
                 />
@@ -828,7 +829,11 @@ export default function App() {
         </section>
 
         <aside className="right-panel panel">
-          <PaperAnalyticsPanel orders={paperOrders} mode={config.trading.mode} />
+          {config.trading.mode === "paper" ? (
+            <PaperAnalyticsPanel orders={paperOrders} />
+          ) : (
+            <LiveAnalyticsPanel orders={botOrders} fills={botFills} />
+          )}
           <h3>{ru.orderBook}</h3>
           <div className="book">
             <div className="book-side">

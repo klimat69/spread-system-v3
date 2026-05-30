@@ -1,7 +1,28 @@
 import { useEffect, useState } from "react";
 import { api, liveWsUrl } from "./api";
+import { applyLiveFillsSnapshot, applyLiveOrdersSnapshot } from "./liveAnalytics";
 import { applyDryRunSnapshot } from "./paperAnalytics";
-import type { BotStatus, DomDelta, DryRunOrder, LiveMessage, MarketState, SymbolListResponse, TapeTrade } from "./types";
+import type {
+  BotFill,
+  BotOrder,
+  BotStatus,
+  DomDelta,
+  DryRunOrder,
+  LiveMessage,
+  MarketState,
+  SymbolListResponse,
+  TapeTrade
+} from "./types";
+
+function parseBotOrders(raw: unknown): BotOrder[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw as BotOrder[];
+}
+
+function parseBotFills(raw: unknown): BotFill[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw as BotFill[];
+}
 
 function dryRunOrdersFromPayload(message: LiveMessage): DryRunOrder[] | null {
   if (message.type === "dry_run" && Array.isArray(message.orders)) {
@@ -33,6 +54,8 @@ export function useLiveTerminal() {
   const [status, setStatus] = useState<BotStatus>(emptyStatus());
   const [market, setMarket] = useState<MarketState | null>(null);
   const [dryRunOrders, setDryRunOrders] = useState<DryRunOrder[]>([]);
+  const [liveOrders, setLiveOrders] = useState<BotOrder[]>([]);
+  const [liveFills, setLiveFills] = useState<BotFill[]>([]);
   const [symbolCatalog, setSymbolCatalog] = useState<SymbolListResponse | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [wsHealth, setWsHealth] = useState("CONNECTING");
@@ -63,6 +86,14 @@ export function useLiveTerminal() {
           if (message.status) setStatus(message.status);
           const dryRunBatch = dryRunOrdersFromPayload(message);
           if (dryRunBatch !== null) setDryRunOrders((prev) => applyDryRunSnapshot(prev, dryRunBatch));
+          const orderBatch = parseBotOrders(message.orders);
+          if (orderBatch !== null) setLiveOrders((prev) => applyLiveOrdersSnapshot(prev, orderBatch));
+          const fillBatch = parseBotFills(message.fills);
+          if (fillBatch !== null) setLiveFills((prev) => applyLiveFillsSnapshot(prev, fillBatch));
+          if (message.type === "orders") {
+            const wsOrders = parseBotOrders(message.orders);
+            if (wsOrders !== null) setLiveOrders((prev) => applyLiveOrdersSnapshot(prev, wsOrders));
+          }
           if (message.type === "market" && message.state) {
             setMarket(message.state);
             setWsHealth(message.state.ws_status);
@@ -89,6 +120,10 @@ export function useLiveTerminal() {
             if (Array.isArray(message.dry_run_orders)) {
               setDryRunOrders((prev) => applyDryRunSnapshot(prev, message.dry_run_orders!));
             }
+            const snapshotOrders = parseBotOrders(message.orders);
+            if (snapshotOrders !== null) setLiveOrders((prev) => applyLiveOrdersSnapshot(prev, snapshotOrders));
+            const snapshotFills = parseBotFills(message.fills);
+            if (snapshotFills !== null) setLiveFills((prev) => applyLiveFillsSnapshot(prev, snapshotFills));
           }
           if (message.message) setError(message.message);
         } catch (err) {
@@ -116,7 +151,7 @@ export function useLiveTerminal() {
 
   useEffect(() => {
     let cancelled = false;
-    const syncPaperOrders = async () => {
+    const syncFromRest = async () => {
       try {
         const nextStatus = await api.status();
         if (cancelled) return;
@@ -124,13 +159,19 @@ export function useLiveTerminal() {
         if (Array.isArray(nextStatus.dry_run_orders)) {
           setDryRunOrders((prev) => applyDryRunSnapshot(prev, nextStatus.dry_run_orders!));
         }
+        const symbol = nextStatus.symbol;
+        const query = symbol ? `?symbol=${encodeURIComponent(symbol)}&limit=100` : "?limit=100";
+        const [orders, fills] = await Promise.all([api.orders(query), api.fills(query)]);
+        if (cancelled) return;
+        setLiveOrders((prev) => applyLiveOrdersSnapshot(prev, orders));
+        setLiveFills((prev) => applyLiveFillsSnapshot(prev, fills));
       } catch {
         // WS is primary; REST resync is best-effort.
       }
     };
 
-    void syncPaperOrders();
-    const timer = window.setInterval(syncPaperOrders, 2500);
+    void syncFromRest();
+    const timer = window.setInterval(syncFromRest, 2500);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -141,6 +182,8 @@ export function useLiveTerminal() {
     status,
     market,
     dryRunOrders,
+    liveOrders,
+    liveFills,
     symbolCatalog,
     setSymbolCatalog,
     wsConnected,

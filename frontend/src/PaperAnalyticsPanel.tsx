@@ -16,9 +16,7 @@ function pnlClass(value: number | null): string {
   return value > 0 ? "pnl-pos" : "pnl-neg";
 }
 
-export function PaperAnalyticsPanel({ orders, mode }: { orders: DryRunOrder[]; mode: "paper" | "live" }) {
-  if (mode !== "paper") return null;
-
+export function PaperAnalyticsPanel({ orders }: { orders: DryRunOrder[] }) {
   const rows = buildPaperTradeRows(orders);
   const stats = sessionPaperStats(rows);
 

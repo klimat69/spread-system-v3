@@ -73,6 +73,7 @@ export function resolveGoldFuturesSymbol(catalog: SymbolListResponse | null): st
 
 export function parseLocaleNumber(value: string, fallback: number): number {
   const normalized = value.trim().replace(",", ".");
+  if (normalized === "" || normalized === "." || normalized === "-") return fallback;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : fallback;
 }

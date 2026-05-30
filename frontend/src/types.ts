@@ -81,6 +81,41 @@ export interface Trade {
   exchange: string;
 }
 
+export interface BotOrder {
+  id: number;
+  exchange: string;
+  market_type: string;
+  symbol: string;
+  side: "buy" | "sell";
+  order_type: string;
+  requested_size: number;
+  requested_price: number | null;
+  client_order_id: string;
+  exchange_order_id: string | null;
+  status: string;
+  filled_size: number;
+  remaining_size: number;
+  average_price: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BotFill {
+  id: number;
+  exchange: string;
+  market_type: string;
+  symbol: string;
+  exchange_order_id: string;
+  exchange_trade_id: string;
+  side: "buy" | "sell";
+  price: number;
+  size: number;
+  fee: number;
+  fee_currency: string;
+  liquidity: string | null;
+  timestamp: string;
+}
+
 export interface PnlSummary {
   total_pnl: number;
   daily_pnl: number;
@@ -104,7 +139,8 @@ export interface LiveMessage {
   metrics?: Record<string, number>;
   market?: MarketStateEnvelope;
   state?: MarketState;
-  orders?: Array<Record<string, unknown>>;
+  orders?: BotOrder[];
+  fills?: BotFill[];
   dry_run_orders?: DryRunOrder[];
   event?: DryRunOrder;
   market_data?: Record<string, unknown>;

@@ -1,6 +1,6 @@
 {
   "name": "spread-system-v3-desktop",
-  "version": "3.1.18",
+  "version": "3.1.19",
   "private": true,
   "description": "Spread System v3 desktop wrapper",
   "main": "main.js",

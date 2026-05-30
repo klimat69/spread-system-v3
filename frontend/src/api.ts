@@ -1,4 +1,14 @@
-import type { AppConfig, AppLog, BotStatus, MarketStateEnvelope, PnlSummary, SymbolListResponse, Trade } from "./types";
+import type {
+  AppConfig,
+  AppLog,
+  BotFill,
+  BotOrder,
+  BotStatus,
+  MarketStateEnvelope,
+  PnlSummary,
+  SymbolListResponse,
+  Trade
+} from "./types";
 
 declare global {
   interface Window {
@@ -33,6 +43,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export const api = {
   status: () => request<BotStatus>("/status"),
   trades: (params = "") => request<Trade[]>(`/trades${params}`),
+  orders: (params = "") => request<BotOrder[]>(`/orders${params}`),
+  fills: (params = "") => request<BotFill[]>(`/fills${params}`),
   pnl: () => request<PnlSummary>("/pnl"),
   config: () => request<AppConfig>("/config"),
   saveConfig: (config: AppConfig) =>
