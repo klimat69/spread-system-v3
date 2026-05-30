@@ -231,3 +231,12 @@ def test_paper_book_sane_rejects_wide_spread():
 
     bad = MarketState(best_bid=71208.0, best_ask=73410.0)
     assert paper_book_sane(bad) is False
+
+
+def test_account_balance_asset_amount():
+    from app.account_balance import _asset_amount
+
+    balances = {"free": {"USDT": 12.5}, "total": {"USDT": 20.0}}
+    assert _asset_amount(balances, "USDT", "free") == 12.5
+    assert _asset_amount(balances, "USDT", "total") == 20.0
+    assert _asset_amount(balances, "BTC", "free") == 0.0

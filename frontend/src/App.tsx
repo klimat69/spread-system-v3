@@ -22,9 +22,11 @@ import {
 } from "./mexcDisplay";
 import { blockedReasonRu, feedReasonRu, feedStatusRu, ru, type UpdaterStatusPayload } from "./ru";
 import { useLiveTerminal } from "./useLiveTerminal";
-import type { AppConfig, MarketType } from "./types";
+import type { AccountBalanceSnapshot, AppConfig, MarketType } from "./types";
 
 const percent = new Intl.NumberFormat("ru-RU", { style: "percent", maximumFractionDigits: 3 });
+const money = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+const sizeFmt = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 4, maximumFractionDigits: 6 });
 
 function normalizeMexcConfig(config: AppConfig): AppConfig {
   return {
@@ -69,6 +71,7 @@ export default function App() {
   const [midSeries, setMidSeries] = useState<MidTick[]>([]);
   const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatusPayload | null>(null);
   const [chartInterval, setChartInterval] = useState<ChartInterval>("1S");
+  const [accountBalance, setAccountBalance] = useState<AccountBalanceSnapshot | null>(null);
 
   const quotes = symbolCatalog?.quotes ?? [];
   const orderedSymbols = useMemo(
@@ -164,6 +167,33 @@ export default function App() {
     setMidSeries([]);
   }, [config?.trading.symbol, config?.trading.market_type]);
 
+  useEffect(() => {
+    if (!config?.exchange.api_key || !config?.exchange.api_secret) {
+      setAccountBalance(null);
+      return;
+    }
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const snapshot = await api.accountBalance();
+        if (!cancelled) setAccountBalance(snapshot);
+      } catch {
+        if (!cancelled) setAccountBalance({ ok: false, reason: "fetch_failed" });
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 30000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    config?.exchange.api_key,
+    config?.exchange.api_secret,
+    config?.trading.market_type,
+    config?.trading.symbol
+  ]);
+
   const futuresSeries =
     market?.candles_1m?.map((candle) => ({
       t: new Date(candle.ts).toLocaleTimeString("ru-RU"),
@@ -184,6 +214,13 @@ export default function App() {
       const saved = await api.saveConfig(normalizeMexcConfig(config));
       setConfig(normalizeMexcConfig(saved));
       setError(null);
+      if (saved.exchange.api_key && saved.exchange.api_secret) {
+        try {
+          setAccountBalance(await api.accountBalance());
+        } catch {
+          setAccountBalance({ ok: false, reason: "fetch_failed" });
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -508,6 +545,48 @@ export default function App() {
                   onChange={(e) => setConfig({ ...config, exchange: { ...config.exchange, password: e.target.value } })}
                 />
               </label>
+              <div className="account-balance panel-inner">
+                <strong>{ru.accountBalance}</strong>
+                <p className="hint">{ru.accountBalanceHint}</p>
+                {!config.exchange.api_key || !config.exchange.api_secret ? (
+                  <p className="hint">{ru.accountBalanceUnavailable}</p>
+                ) : accountBalance?.ok ? (
+                  <div className="paper-stats">
+                    <span>
+                      {ru.accountQuoteAvailable} ({accountBalance.quote}):{" "}
+                      <strong>{money.format(accountBalance.quote_free ?? 0)}</strong>
+                    </span>
+                    <span>
+                      {ru.accountQuoteTotal}: {money.format(accountBalance.quote_total ?? 0)} {accountBalance.quote}
+                    </span>
+                    {config.trading.market_type === "spot" && accountBalance.base ? (
+                      <span>
+                        {ru.accountBaseBalance} ({accountBalance.base}): {sizeFmt.format(accountBalance.base_total ?? 0)}
+                      </span>
+                    ) : null}
+                    {config.trading.market_type === "swap" ? (
+                      <>
+                        <span>
+                          {ru.accountPosition}: {sizeFmt.format(accountBalance.position_size ?? 0)}{" "}
+                          {accountBalance.base ?? ""}
+                        </span>
+                        {(accountBalance.unrealized_pnl ?? 0) !== 0 ? (
+                          <span>
+                            {ru.accountUnrealizedPnl}: {money.format(accountBalance.unrealized_pnl ?? 0)} {accountBalance.quote}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                ) : accountBalance ? (
+                  <p className="hint warn">
+                    {ru.accountBalanceError}
+                    {accountBalance.message ? `: ${accountBalance.message}` : ""}
+                  </p>
+                ) : (
+                  <p className="hint">…</p>
+                )}
+              </div>
               <label>
                 {ru.tradingMode}
                 <select

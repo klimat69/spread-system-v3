@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 from pydantic import BaseModel
 
+from .account_balance import fetch_account_balance_snapshot
 from .config import AppConfig, config_service
 from .credentials import credential_store
 from .database import trade_repository
@@ -146,6 +147,12 @@ async def get_live_eligibility() -> dict:
         "validation": validation,
         "reconciliation": reconciliation,
     }
+
+
+@app.get("/account/balance")
+async def get_account_balance() -> dict:
+    config = config_service.load(force=True)
+    return await fetch_account_balance_snapshot(config, exchange_adapter)
 
 
 @app.get("/latency")

@@ -171,6 +171,18 @@ select:focus {
   font-size: 0.72rem;
 }
 
+.account-balance {
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid #22314f;
+  border-radius: 8px;
+  background: #0b1220;
+}
+
+.account-balance strong {
+  color: #e2e8f0;
+}
+
 .paper-analytics {
   margin-bottom: 14px;
   padding-bottom: 12px;

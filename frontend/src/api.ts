@@ -1,5 +1,6 @@
 import type {
   AppConfig,
+  AccountBalanceSnapshot,
   AppLog,
   BotFill,
   BotOrder,
@@ -47,6 +48,7 @@ export const api = {
   fills: (params = "") => request<BotFill[]>(`/fills${params}`),
   pnl: () => request<PnlSummary>("/pnl"),
   config: () => request<AppConfig>("/config"),
+  accountBalance: () => request<AccountBalanceSnapshot>("/account/balance"),
   saveConfig: (config: AppConfig) =>
     request<AppConfig>("/config", { method: "POST", body: JSON.stringify(config) }),
   symbols: (marketType: "spot" | "swap", quote?: string) => {

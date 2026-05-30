@@ -81,6 +81,23 @@ export interface Trade {
   exchange: string;
 }
 
+export interface AccountBalanceSnapshot {
+  ok: boolean;
+  reason?: string;
+  message?: string;
+  market_type?: "spot" | "swap";
+  symbol?: string;
+  base?: string;
+  quote?: string;
+  base_free?: number;
+  base_total?: number;
+  quote_free?: number;
+  quote_total?: number;
+  position_size?: number;
+  unrealized_pnl?: number;
+  updated_at?: string;
+}
+
 export interface BotOrder {
   id: number;
   exchange: string;
